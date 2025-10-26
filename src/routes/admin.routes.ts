@@ -1,9 +1,15 @@
+console.log("=== ADMIN.ROUTES: Loading module ===");
 import { Router } from 'express';
+console.log("=== ADMIN.ROUTES: Router imported ===");
 import { AdminController } from '../controllers/admin.controller';
+console.log("=== ADMIN.ROUTES: AdminController imported ===");
 import { authenticate, authorize } from '../middleware/auth';
+console.log("=== ADMIN.ROUTES: auth imported ===");
 
 const router = Router();
+console.log("=== ADMIN.ROUTES: Router instance created ===");
 const adminController = new AdminController();
+console.log("=== ADMIN.ROUTES: AdminController instance created ===");
 
 // All admin routes require authentication and admin/editor role
 router.use(authenticate);

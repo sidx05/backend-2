@@ -1,9 +1,16 @@
+console.log("=== PUBLIC.CONTROLLER: Loading module ===");
 import { Request, Response } from 'express';
+console.log("=== PUBLIC.CONTROLLER: express imported ===");
 import { ArticleService } from '../services/article.service';
+console.log("=== PUBLIC.CONTROLLER: ArticleService imported ===");
 import { CategoryService } from '../services/category.service';
+console.log("=== PUBLIC.CONTROLLER: CategoryService imported ===");
 import { TickerService } from '../services/ticker.service';
+console.log("=== PUBLIC.CONTROLLER: TickerService imported ===");
 import { getArticlesSchema, getTrendingSchema } from '../utils/validation';
+console.log("=== PUBLIC.CONTROLLER: validation imported ===");
 import { logger } from '../utils/logger';
+console.log("=== PUBLIC.CONTROLLER: logger imported ===");
 
 export class PublicController {
   private articleService: ArticleService;
@@ -11,9 +18,14 @@ export class PublicController {
   private tickerService: TickerService;
 
   constructor() {
+    console.log("=== PUBLIC.CONTROLLER: Constructor started ===");
     this.articleService = new ArticleService();
+    console.log("=== PUBLIC.CONTROLLER: ArticleService instantiated ===");
     this.categoryService = new CategoryService();
+    console.log("=== PUBLIC.CONTROLLER: CategoryService instantiated ===");
     this.tickerService = new TickerService();
+    console.log("=== PUBLIC.CONTROLLER: TickerService instantiated ===");
+    console.log("=== PUBLIC.CONTROLLER: Constructor completed ===");
   }
 
   getHealth = async (req: Request, res: Response) => {

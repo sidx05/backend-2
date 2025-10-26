@@ -1,9 +1,14 @@
 // backend/src/routes/public.routes.ts
+console.log("=== PUBLIC.ROUTES: Loading module ===");
 import { Router } from "express";
+console.log("=== PUBLIC.ROUTES: Router imported ===");
 import { PublicController } from "../controllers/public.controller";
+console.log("=== PUBLIC.ROUTES: PublicController imported ===");
 
 const router = Router();
+console.log("=== PUBLIC.ROUTES: Router instance created ===");
 const publicController = new PublicController();
+console.log("=== PUBLIC.ROUTES: PublicController instance created ===");
 
 // Keep the same paths you used in the controller
 router.get("/health", publicController.getHealth);
