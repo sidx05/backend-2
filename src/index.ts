@@ -1,7 +1,9 @@
 // backend/src/index.ts
 /// <reference path="./types/express.d.ts" />
+console.log("=== INDEX.TS: Loading modules ===");
 import dotenv from "dotenv";
 dotenv.config();
+console.log("=== INDEX.TS: dotenv configured ===");
 
 import express from "express";
 import connectDB from "./config/database";
