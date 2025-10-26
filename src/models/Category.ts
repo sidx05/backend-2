@@ -1,6 +1,9 @@
 // backend/src/models/Category.ts
+console.log("=== CATEGORY.MODEL: Loading module ===");
 import  { Document, Schema } from 'mongoose';
+console.log("=== CATEGORY.MODEL: mongoose types imported ===");
 import { mongoose } from "../lib/mongoose";
+console.log("=== CATEGORY.MODEL: mongoose instance imported ===");
 
 export interface ICategory extends Document {
   key: string;
@@ -68,7 +71,11 @@ const categorySchema = new Schema<ICategory>(
 );
 
 // Indexes
+console.log("=== CATEGORY.MODEL: About to create indexes ===");
 categorySchema.index({ parent: 1 });
 categorySchema.index({ order: 1 });
+console.log("=== CATEGORY.MODEL: Indexes created ===");
 
+console.log("=== CATEGORY.MODEL: About to create model ===");
 export const Category = mongoose.model<ICategory>('Category', categorySchema);
+console.log("=== CATEGORY.MODEL: Model created and exported ===");

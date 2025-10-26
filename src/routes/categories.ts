@@ -1,9 +1,14 @@
 // backend/src/routes/categories.ts
+console.log("=== CATEGORIES.ROUTES: Loading module ===");
 import { Router } from "express";
+console.log("=== CATEGORIES.ROUTES: Router imported ===");
 import { Category } from "../models/Category";
+console.log("=== CATEGORIES.ROUTES: Category model imported ===");
 import { Article } from "../models/Article";
+console.log("=== CATEGORIES.ROUTES: Article model imported ===");
 
 const router = Router();
+console.log("=== CATEGORIES.ROUTES: Router instance created ===");
 
 /**
  * GET /api/categories

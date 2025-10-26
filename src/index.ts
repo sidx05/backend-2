@@ -18,13 +18,20 @@ console.log("=== INDEX.TS: setupRoutes imported ===");
 import { setupMiddleware } from "./middleware";
 console.log("=== INDEX.TS: setupMiddleware imported ===");
 import { logger } from "./utils/logger";
+console.log("=== INDEX.TS: logger imported ===");
 import { setupSwagger } from "./config/swagger";
+console.log("=== INDEX.TS: setupSwagger imported ===");
 
 // routes
+console.log("=== INDEX.TS: About to import categoriesRoutes ===");
 import categoriesRoutes from "./routes/categories";
+console.log("=== INDEX.TS: categoriesRoutes imported ===");
+console.log("=== INDEX.TS: About to import articlesRoutes ===");
 import articlesRoutes from "./routes/articles"; // make sure this exists
+console.log("=== INDEX.TS: articlesRoutes imported ===");
 
 const PORT: number = parseInt(process.env.PORT || "3001", 10);
+console.log("=== INDEX.TS: PORT configured:", PORT);
 
 export const app = express();
 
@@ -139,8 +146,15 @@ async function startServer() {
     process.on("SIGINT", graceful);
   } catch (err) {
     logger.error("Startup error:", err);
+    console.error("=== STARTUP ERROR ===", err);
     process.exit(1);
   }
 }
 
-startServer();
+console.log("=== INDEX.TS: About to call startServer() ===");
+try {
+  startServer();
+} catch (err) {
+  console.error("=== FATAL ERROR CALLING startServer() ===", err);
+  process.exit(1);
+}
