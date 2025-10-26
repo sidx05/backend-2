@@ -5,7 +5,7 @@ dotenv.config();
 
 import express from "express";
 import connectDB from "./config/database";
-import { createClient } from "redis";
+import { createClient, RedisClientType } from "redis";
 import { createBullMQ, scheduleScrapingJob } from "./config/bullmq";
 import { setupRoutes } from "./routes";
 import { setupMiddleware } from "./middleware";
@@ -20,24 +20,41 @@ const PORT: number = parseInt(process.env.PORT || "3001", 10);
 
 export const app = express();
 
-export const redisClient = createClient({
-  url: process.env.REDIS_URL || "redis://127.0.0.1:6379",
-});
+// Create Redis client only if REDIS_URL is provided; keep startup resilient for local/cloud
+let redisClient: RedisClientType | null = null;
+const REDIS_URL = process.env.REDIS_URL;
+if (REDIS_URL) {
+  const useTLS = REDIS_URL.startsWith("rediss://");
+  redisClient = createClient({
+    url: REDIS_URL,
+    socket: useTLS ? { tls: true } as any : undefined,
+  });
 
-redisClient.on("error", (err) => {
-  logger.error("Redis Client Error:", err);
-});
-redisClient.on("connect", () => {
-  logger.info("Connected to Redis");
-});
+  redisClient.on("error", (err) => {
+    logger.error("Redis Client Error:", err);
+  });
+  redisClient.on("connect", () => {
+    logger.info("Connected to Redis");
+  });
+} else {
+  logger.warn("REDIS_URL not set; starting without Redis/BullMQ. Jobs will be disabled.");
+}
 
 async function startServer() {
   try {
     // ensure DB connection before starting other services
     await connectDB();
 
-    // Connect Redis
-    await redisClient.connect();
+    // Connect Redis if configured (non-fatal on failure)
+    if (redisClient) {
+      try {
+        await redisClient.connect();
+      } catch (e) {
+        logger.error("Failed to connect to Redis. Continuing without jobs.", e);
+        try { await redisClient.quit(); } catch {}
+        redisClient = null;
+      }
+    }
 
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
@@ -51,11 +68,15 @@ async function startServer() {
     app.use("/api/categories", categoriesRoutes);
     app.use("/api/articles", articlesRoutes);
 
-    // schedule jobs (RSS worker etc.)
-    const bullmq = createBullMQ();
-    scheduleScrapingJob().catch((error) => {
-      logger.error("Failed to schedule scraping job:", error);
-    });
+    // schedule jobs (RSS worker etc.) only when Redis is available
+    if (REDIS_URL && redisClient) {
+      const bullmq = createBullMQ();
+      scheduleScrapingJob().catch((error) => {
+        logger.error("Failed to schedule scraping job:", error);
+      });
+    } else {
+      logger.warn("Jobs scheduler skipped (no Redis connection).");
+    }
 
     // health
     app.get("/health", (req, res) => {
@@ -91,7 +112,9 @@ async function startServer() {
     const graceful = async () => {
       logger.info("Graceful shutdown initiated");
       try {
-        await redisClient.quit();
+        if (redisClient) {
+          await redisClient.quit();
+        }
       } catch (e) {
         logger.error("Error quitting redis", e);
       }
