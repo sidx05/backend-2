@@ -21,7 +21,7 @@ const PORT: number = parseInt(process.env.PORT || "3001", 10);
 export const app = express();
 
 // Create Redis client only if REDIS_URL is provided; keep startup resilient for local/cloud
-let redisClient: RedisClientType | null = null;
+export let redisClient: RedisClientType | null = null;
 const REDIS_URL = process.env.REDIS_URL;
 if (REDIS_URL) {
   const useTLS = REDIS_URL.startsWith("rediss://");
