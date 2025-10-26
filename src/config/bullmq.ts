@@ -4,42 +4,66 @@ import { JobProcessor } from "../jobs/job.processor";
 
 // Build BullMQ (Redis) connection from REDIS_URL if provided; otherwise fall back to host/port.
 // This supports managed providers like Upstash (rediss:// with TLS).
-let connection: any;
-try {
-  if (process.env.REDIS_URL) {
-    const u = new URL(process.env.REDIS_URL);
-    connection = {
-      host: u.hostname,
-      port: parseInt(u.port || "6379", 10),
-      username: u.username || undefined,
-      password: u.password || undefined,
-      // Enable TLS for rediss:// URLs
-      ...(u.protocol === "rediss:" ? { tls: {} } : {}),
-    } as any;
-  } else {
-    connection = {
+function getConnection() {
+  try {
+    if (process.env.REDIS_URL) {
+      const u = new URL(process.env.REDIS_URL);
+      return {
+        host: u.hostname,
+        port: parseInt(u.port || "6379", 10),
+        username: u.username || undefined,
+        password: u.password || undefined,
+        // Enable TLS for rediss:// URLs
+        ...(u.protocol === "rediss:" ? { tls: {} } : {}),
+      } as any;
+    } else {
+      return {
+        host: process.env.REDIS_HOST || "127.0.0.1",
+        port: parseInt(process.env.REDIS_PORT || "6379", 10),
+      } as any;
+    }
+  } catch (e) {
+    logger.error("Invalid REDIS_URL. Falling back to localhost:6379", e);
+    return {
       host: process.env.REDIS_HOST || "127.0.0.1",
       port: parseInt(process.env.REDIS_PORT || "6379", 10),
     } as any;
   }
-} catch (e) {
-  logger.error("Invalid REDIS_URL. Falling back to localhost:6379", e);
-  connection = {
-    host: process.env.REDIS_HOST || "127.0.0.1",
-    port: parseInt(process.env.REDIS_PORT || "6379", 10),
-  } as any;
 }
 
-// Create queues
-export const scrapingQueue = new Queue("scraping", { connection });
-export const moderationQueue = new Queue("moderation", { connection });
-export const publishingQueue = new Queue("publishing", { connection });
+// Lazy queue creation - only create when actually accessed and REDIS_URL is set
+let scrapingQueue: Queue | null = null;
+let moderationQueue: Queue | null = null;
+let publishingQueue: Queue | null = null;
+
+export function getScrapingQueue(): Queue {
+  if (!scrapingQueue) {
+    scrapingQueue = new Queue("scraping", { connection: getConnection() });
+  }
+  return scrapingQueue;
+}
+
+export function getModerationQueue(): Queue {
+  if (!moderationQueue) {
+    moderationQueue = new Queue("moderation", { connection: getConnection() });
+  }
+  return moderationQueue;
+}
+
+export function getPublishingQueue(): Queue {
+  if (!publishingQueue) {
+    publishingQueue = new Queue("publishing", { connection: getConnection() });
+  }
+  return publishingQueue;
+}
 
 // Create job processor instance
 const jobProcessor = new JobProcessor();
 
 // Create workers
 export const createWorkers = () => {
+  const connection = getConnection();
+  
   // Scraping worker (ENABLED - only metadata processing)
   const scrapingWorker = new Worker(
     "scraping",
@@ -97,7 +121,7 @@ export const createWorkers = () => {
 // Job scheduling functions
 export const scheduleScrapingJob = async (sourceId?: string) => {
   try {
-    const job = await scrapingQueue.add(
+    const job = await getScrapingQueue().add(
       "scrape-all",
       { sourceId },
       {
@@ -122,7 +146,7 @@ export const scheduleScrapingJob = async (sourceId?: string) => {
 export const addModerationJob = async (articleId: string) => {
   // MODERATION DISABLED: This will now only approve all content
   try {
-    const job = await moderationQueue.add(
+    const job = await getModerationQueue().add(
       "moderate-content",
       { articleId },
       {
@@ -143,7 +167,7 @@ export const addModerationJob = async (articleId: string) => {
 
 export const addPublishingJob = async (articleId: string) => {
   try {
-    const job = await publishingQueue.add(
+    const job = await getPublishingQueue().add(
       "publish-article",
       { articleId },
       {
@@ -164,9 +188,9 @@ export const addPublishingJob = async (articleId: string) => {
 
 export const createBullMQ = () => {
   return {
-    scrapingQueue,
-    moderationQueue,
-    publishingQueue,
+    scrapingQueue: getScrapingQueue(),
+    moderationQueue: getModerationQueue(),
+    publishingQueue: getPublishingQueue(),
     createWorkers,
     scheduleScrapingJob,
     addModerationJob,
