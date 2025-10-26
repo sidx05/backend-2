@@ -1,6 +1,6 @@
 ## Multi-stage Dockerfile
 ## Builder: install deps (including dev) and build the TypeScript output
-FROM node:18-alpine AS builder
+FROM node:20-alpine AS builder
 WORKDIR /app
 
 # Copy package files and install full deps for build
@@ -16,7 +16,7 @@ COPY . .
 RUN npm run build
 
 # Production image: copy only what's needed
-FROM node:18-alpine AS runner
+FROM node:20-alpine AS runner
 WORKDIR /app
 
 # Copy package.json and production node_modules from builder
