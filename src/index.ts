@@ -42,6 +42,12 @@ if (REDIS_URL) {
 
 async function startServer() {
   try {
+    logger.info("🚀 Starting NewsHub Backend Server...");
+    logger.info(`📍 NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
+    logger.info(`📍 PORT: ${PORT}`);
+    logger.info(`📍 REDIS_URL: ${REDIS_URL ? 'configured' : 'not set'}`);
+    logger.info(`📍 DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'not set'}`);
+    
     // ensure DB connection before starting other services
     await connectDB();
 
@@ -104,7 +110,7 @@ async function startServer() {
       res.status(404).json({ error: "Route not found" });
     });
 
-    app.listen(PORT, () => {
+    app.listen(PORT, "0.0.0.0", () => {
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Swagger docs available at http://localhost:${PORT}/api-docs`);
     });

@@ -5,7 +5,6 @@
   "main": "dist/index.js",
   "scripts": {
     "start": "node dist/index.js",
-    "postinstall": "npm run build",
     "dev": "nodemon --exec ts-node --files --project tsconfig.json src/index.ts",
     "build": "tsc",
     "test": "jest",
