@@ -2,11 +2,33 @@ import { Queue, Worker } from "bullmq";
 import { logger } from "../utils/logger";
 import { JobProcessor } from "../jobs/job.processor";
 
-// Redis connection config
-const connection = {
-  host: process.env.REDIS_HOST || "127.0.0.1",
-  port: parseInt(process.env.REDIS_PORT || "6379", 10),
-};
+// Build BullMQ (Redis) connection from REDIS_URL if provided; otherwise fall back to host/port.
+// This supports managed providers like Upstash (rediss:// with TLS).
+let connection: any;
+try {
+  if (process.env.REDIS_URL) {
+    const u = new URL(process.env.REDIS_URL);
+    connection = {
+      host: u.hostname,
+      port: parseInt(u.port || "6379", 10),
+      username: u.username || undefined,
+      password: u.password || undefined,
+      // Enable TLS for rediss:// URLs
+      ...(u.protocol === "rediss:" ? { tls: {} } : {}),
+    } as any;
+  } else {
+    connection = {
+      host: process.env.REDIS_HOST || "127.0.0.1",
+      port: parseInt(process.env.REDIS_PORT || "6379", 10),
+    } as any;
+  }
+} catch (e) {
+  logger.error("Invalid REDIS_URL. Falling back to localhost:6379", e);
+  connection = {
+    host: process.env.REDIS_HOST || "127.0.0.1",
+    port: parseInt(process.env.REDIS_PORT || "6379", 10),
+  } as any;
+}
 
 // Create queues
 export const scrapingQueue = new Queue("scraping", { connection });
