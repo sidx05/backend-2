@@ -57,49 +57,73 @@ if (REDIS_URL) {
 
 async function startServer() {
   try {
+    console.log("=== STARTSERVER: Function called ===");
     logger.info("🚀 Starting NewsHub Backend Server...");
+    console.log("=== STARTSERVER: Logger initialized ===");
     logger.info(`📍 NODE_ENV: ${process.env.NODE_ENV || 'not set'}`);
     logger.info(`📍 PORT: ${PORT}`);
     logger.info(`📍 REDIS_URL: ${REDIS_URL ? 'configured' : 'not set'}`);
     logger.info(`📍 DATABASE_URL: ${process.env.DATABASE_URL ? 'configured' : 'not set'}`);
+    console.log("=== STARTSERVER: About to call connectDB ===");
     
     // ensure DB connection before starting other services
     await connectDB();
+    console.log("=== STARTSERVER: connectDB completed ===");
 
     // Connect Redis if configured (non-fatal on failure)
+    console.log("=== STARTSERVER: Checking Redis ===");
     if (redisClient) {
       try {
+        console.log("=== STARTSERVER: Connecting to Redis ===");
         await redisClient.connect();
+        console.log("=== STARTSERVER: Redis connected ===");
       } catch (e) {
         logger.error("Failed to connect to Redis. Continuing without jobs.", e);
+        console.log("=== STARTSERVER: Redis connection failed, continuing ===");
         try { await redisClient.quit(); } catch {}
         redisClient = null;
       }
     }
 
+    console.log("=== STARTSERVER: Configuring Express middleware ===");
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
 
     // middleware, routes, swagger
+    console.log("=== STARTSERVER: About to call setupMiddleware ===");
     setupMiddleware(app);
+    console.log("=== STARTSERVER: setupMiddleware completed ===");
+    console.log("=== STARTSERVER: About to call setupRoutes ===");
     setupRoutes(app);
+    console.log("=== STARTSERVER: setupRoutes completed ===");
+    console.log("=== STARTSERVER: About to call setupSwagger ===");
     setupSwagger(app);
+    console.log("=== STARTSERVER: setupSwagger completed ===");
 
     // mount category + article routes
+    console.log("=== STARTSERVER: Mounting category routes ===");
     app.use("/api/categories", categoriesRoutes);
+    console.log("=== STARTSERVER: Mounting article routes ===");
     app.use("/api/articles", articlesRoutes);
+    console.log("=== STARTSERVER: Routes mounted ===");
 
     // schedule jobs (RSS worker etc.) only when Redis is available
+    console.log("=== STARTSERVER: Checking job scheduler ===");
     if (REDIS_URL && redisClient) {
+      console.log("=== STARTSERVER: Creating BullMQ ===");
       const bullmq = createBullMQ();
+      console.log("=== STARTSERVER: Scheduling scraping job ===");
       scheduleScrapingJob().catch((error) => {
         logger.error("Failed to schedule scraping job:", error);
       });
+      console.log("=== STARTSERVER: Jobs scheduled ===");
     } else {
       logger.warn("Jobs scheduler skipped (no Redis connection).");
+      console.log("=== STARTSERVER: Jobs skipped (no Redis) ===");
     }
 
     // health
+    console.log("=== STARTSERVER: Setting up health endpoint ===");
     app.get("/health", (req, res) => {
       res.json({
         status: "OK",
@@ -121,11 +145,14 @@ async function startServer() {
     );
 
     // 404
+    console.log("=== STARTSERVER: Setting up 404 handler ===");
     app.use("*", (req, res) => {
       res.status(404).json({ error: "Route not found" });
     });
 
+    console.log("=== STARTSERVER: About to start listening on port", PORT, "===");
     app.listen(PORT, "0.0.0.0", () => {
+      console.log("=== STARTSERVER: Server is now listening! ===");
       logger.info(`Server running on port ${PORT}`);
       logger.info(`Swagger docs available at http://localhost:${PORT}/api-docs`);
     });
