@@ -7,10 +7,11 @@ export class TickerService {
     try {
       // Try to get from cache first
       const cacheKey = 'tickers:active';
-      const cachedTickers = await redisClient.get(cacheKey);
-      
-      if (cachedTickers) {
-        return JSON.parse(cachedTickers);
+      if (redisClient) {
+        const cachedTickers = await redisClient.get(cacheKey);
+        if (cachedTickers) {
+          return JSON.parse(cachedTickers);
+        }
       }
 
       // Get active tickers from database
@@ -21,7 +22,9 @@ export class TickerService {
         .sort({ priority: -1, createdAt: -1 });
 
       // Cache for 5 minutes
-      await redisClient.setEx(cacheKey, 300, JSON.stringify(tickers));
+      if (redisClient) {
+        await redisClient.setEx(cacheKey, 300, JSON.stringify(tickers));
+      }
 
       return tickers;
     } catch (error) {
@@ -100,7 +103,9 @@ export class TickerService {
 
   private async clearTickersCache() {
     try {
-      await redisClient.del('tickers:active');
+      if (redisClient) {
+        await redisClient.del('tickers:active');
+      }
     } catch (error) {
       logger.error('Clear tickers cache error:', error);
     }

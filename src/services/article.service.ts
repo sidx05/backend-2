@@ -89,10 +89,11 @@ export class ArticleService {
     try {
       // Try to get from cache first
       const cacheKey = `article:${slug}`;
-      const cachedArticle = await redisClient.get(cacheKey);
-      
-      if (cachedArticle) {
-        return JSON.parse(cachedArticle);
+      if (redisClient) {
+        const cachedArticle = await redisClient.get(cacheKey);
+        if (cachedArticle) {
+          return JSON.parse(cachedArticle);
+        }
       }
 
       // Get from database
@@ -108,7 +109,9 @@ export class ArticleService {
       await Article.findByIdAndUpdate(article._id, { $inc: { viewCount: 1 } });
 
       // Cache for 1 hour
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(article));
+      if (redisClient) {
+        await redisClient.setEx(cacheKey, 3600, JSON.stringify(article));
+      }
 
       return article;
     } catch (error) {
@@ -121,10 +124,11 @@ export class ArticleService {
     try {
       // Try to get from cache first
       const cacheKey = `article:id:${id}`;
-      const cachedArticle = await redisClient.get(cacheKey);
-      
-      if (cachedArticle) {
-        return JSON.parse(cachedArticle);
+      if (redisClient) {
+        const cachedArticle = await redisClient.get(cacheKey);
+        if (cachedArticle) {
+          return JSON.parse(cachedArticle);
+        }
       }
 
       // Get from database
@@ -140,7 +144,9 @@ export class ArticleService {
       await Article.findByIdAndUpdate(article._id, { $inc: { viewCount: 1 } });
 
       // Cache for 1 hour
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(article));
+      if (redisClient) {
+        await redisClient.setEx(cacheKey, 3600, JSON.stringify(article));
+      }
 
       return article;
     } catch (error) {
@@ -156,10 +162,11 @@ export class ArticleService {
 
       // Try to get from cache first
       const cacheKey = `trending:${limit}`;
-      const cachedTrending = await redisClient.get(cacheKey);
-      
-      if (cachedTrending) {
-        return JSON.parse(cachedTrending);
+      if (redisClient) {
+        const cachedTrending = await redisClient.get(cacheKey);
+        if (cachedTrending) {
+          return JSON.parse(cachedTrending);
+        }
       }
 
       // Get trending articles (published in last 7 days with most views)
@@ -176,7 +183,9 @@ export class ArticleService {
         .limit(limitNum);
 
       // Cache for 30 minutes
-      await redisClient.setEx(cacheKey, 1800, JSON.stringify(trending));
+      if (redisClient) {
+        await redisClient.setEx(cacheKey, 1800, JSON.stringify(trending));
+      }
 
       return trending;
     } catch (error) {
@@ -236,6 +245,8 @@ export class ArticleService {
 
   private async clearArticleCaches() {
     try {
+      if (!redisClient) return;
+      
       // Clear trending cache
       const keys = await redisClient.keys('trending:*');
       if (keys.length > 0) {

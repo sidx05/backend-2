@@ -7,10 +7,11 @@ export class CategoryService {
     try {
       // Try to get from cache first
       const cacheKey = 'categories:all';
-      const cachedCategories = await redisClient.get(cacheKey);
-      
-      if (cachedCategories) {
-        return JSON.parse(cachedCategories);
+      if (redisClient) {
+        const cachedCategories = await redisClient.get(cacheKey);
+        if (cachedCategories) {
+          return JSON.parse(cachedCategories);
+        }
       }
 
       // Get from database
@@ -19,7 +20,9 @@ export class CategoryService {
         .populate('parent', 'key label');
 
       // Cache for 1 hour
-      await redisClient.setEx(cacheKey, 3600, JSON.stringify(categories));
+      if (redisClient) {
+        await redisClient.setEx(cacheKey, 3600, JSON.stringify(categories));
+      }
 
       return categories;
     } catch (error) {
@@ -92,7 +95,9 @@ export class CategoryService {
 
   private async clearCategoriesCache() {
     try {
-      await redisClient.del('categories:all');
+      if (redisClient) {
+        await redisClient.del('categories:all');
+      }
     } catch (error) {
       logger.error('Clear categories cache error:', error);
     }
