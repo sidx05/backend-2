@@ -1,8 +1,11 @@
 import swaggerUi from 'swagger-ui-express';
 import YAML from 'yamljs';
 import { Request, Response } from 'express';
+import path from 'path';
 
-const swaggerDocument = YAML.load('./src/config/swagger.yaml');
+// Resolve the YAML file relative to the compiled file location (dist/config)
+const swaggerPath = path.resolve(__dirname, 'swagger.yaml');
+const swaggerDocument = YAML.load(swaggerPath);
 
 // This function sets up all Swagger-related routes and should be exported once.
 export const setupSwagger = (app: any) => {

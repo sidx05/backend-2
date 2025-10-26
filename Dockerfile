@@ -15,6 +15,10 @@ COPY . .
 # Run the build (produces /app/dist)
 RUN npm run build
 
+# Copy non-TS assets required at runtime (e.g., Swagger YAML)
+RUN mkdir -p dist/config \
+  && cp -f src/config/swagger.yaml dist/config/swagger.yaml
+
 # Production image: copy only what's needed
 FROM node:20-alpine AS runner
 WORKDIR /app
