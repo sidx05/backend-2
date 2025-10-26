@@ -6,11 +6,17 @@ dotenv.config();
 console.log("=== INDEX.TS: dotenv configured ===");
 
 import express from "express";
+console.log("=== INDEX.TS: express imported ===");
 import connectDB from "./config/database";
+console.log("=== INDEX.TS: connectDB imported ===");
 import { createClient, RedisClientType } from "redis";
+console.log("=== INDEX.TS: redis imported ===");
 import { createBullMQ, scheduleScrapingJob } from "./config/bullmq";
+console.log("=== INDEX.TS: bullmq imported ===");
 import { setupRoutes } from "./routes";
+console.log("=== INDEX.TS: setupRoutes imported ===");
 import { setupMiddleware } from "./middleware";
+console.log("=== INDEX.TS: setupMiddleware imported ===");
 import { logger } from "./utils/logger";
 import { setupSwagger } from "./config/swagger";
 
