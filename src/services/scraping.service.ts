@@ -2,8 +2,10 @@ import Parser from "rss-parser";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import crypto from "crypto";
-import { db } from '../../../src/lib/db';
+import connectDB from "../config/database";
 import { logger } from "../utils/logger"; // make sure this exists
+import { Source } from "../models/Source";
+import { Article } from "../models/Article";
 
 // Proxy rotation system
 const PROXY_LIST = [
@@ -168,7 +170,7 @@ export class ScrapingService {
   async scrapeAllSources(): Promise<ScrapedArticle[]> {
     try {
       logger.info("🔹 Starting scraping for all sources");
-      const sources = await db.source.findMany({ where: { active: true } });
+      const sources = await Source.find({ active: true });
 
       let allArticles: ScrapedArticle[] = [];
 
@@ -176,25 +178,22 @@ export class ScrapingService {
         try {
           const articles = await this.scrapeSource(source);
           for (const scraped of articles) {
-            await db.article.create({
-              data: {
-                title: scraped.title,
-                summary: scraped.summary,
-                content: scraped.content,
-                url: scraped.sourceUrl,
-                hash: scraped.hash,
-                category: scraped.category,
-                image: scraped.images?.[0]?.url ?? null,
-                published: scraped.publishedAt,
-              },
+            await Article.create({
+              title: scraped.title,
+              summary: scraped.summary,
+              content: scraped.content,
+              url: scraped.sourceUrl,
+              hash: scraped.hash,
+              category: scraped.category,
+              images: scraped.images || [],
+              publishedAt: scraped.publishedAt,
             });
           }
 
           allArticles = allArticles.concat(articles);
 
-          await db.source.update({
-            where: { id: source.id },
-            data: { lastScraped: new Date() },
+          await Source.findByIdAndUpdate(source._id, {
+            lastScraped: new Date(),
           });
         } catch (err: unknown) {
           logger.error(`❌ Error scraping source ${source.name}: ${(err as Error).message}`);
@@ -280,7 +279,7 @@ export class ScrapingService {
       const hash = this.generateHash(title + summary + source.id.toString());
 
       // Skip duplicates
-      const existing = await db.article.findUnique({ where: { hash } });
+      const existing = await Article.findOne({ hash });
       if (existing) return null;
 
       const fullContent = source.type === "api" ? summary : await this.fetchArticleContent(link);
