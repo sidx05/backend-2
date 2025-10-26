@@ -57,19 +57,27 @@ export function getPublishingQueue(): Queue {
   return publishingQueue;
 }
 
-// Create job processor instance
-const jobProcessor = new JobProcessor();
+// Lazy job processor - only create when workers are actually created
+let jobProcessor: JobProcessor | null = null;
+
+function getJobProcessor(): JobProcessor {
+  if (!jobProcessor) {
+    jobProcessor = new JobProcessor();
+  }
+  return jobProcessor;
+}
 
 // Create workers
 export const createWorkers = () => {
   const connection = getConnection();
+  const processor = getJobProcessor();
   
   // Scraping worker (ENABLED - only metadata processing)
   const scrapingWorker = new Worker(
     "scraping",
     async (job) => {
       logger.info(`Processing scraping job: ${job.id}`);
-      return await jobProcessor.processScrapingJob(job);
+      return await processor.processScrapingJob(job);
     },
     { connection }
   );
@@ -81,7 +89,7 @@ export const createWorkers = () => {
     "moderation",
     async (job) => {
       logger.info(`Processing moderation job (DISABLED): ${job.id}`);
-      return await jobProcessor.processModerationJob(job);
+      return await processor.processModerationJob(job);
     },
     { connection }
   );
@@ -91,7 +99,7 @@ export const createWorkers = () => {
     "publishing",
     async (job) => {
       logger.info(`Processing publishing job: ${job.id}`);
-      return await jobProcessor.processPublishingJob(job);
+      return await processor.processPublishingJob(job);
     },
     { connection }
   );
