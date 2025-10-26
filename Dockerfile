@@ -5,7 +5,9 @@ WORKDIR /app
 
 # Copy package files and install full deps for build
 COPY package*.json ./
-RUN npm ci
+# Install dependencies but skip lifecycle scripts (postinstall runs `npm run build` and
+# the source isn't copied yet). We'll run build explicitly after copying the source.
+RUN npm ci --ignore-scripts
 
 # Copy rest of the app
 COPY . .
