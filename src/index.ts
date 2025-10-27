@@ -1,5 +1,5 @@
 // backend/src/index.ts
-/// <reference path="./types/express.d.ts" />
+import "./types/express";
 console.log("=== INDEX.TS: Loading modules ===");
 import dotenv from "dotenv";
 dotenv.config();
