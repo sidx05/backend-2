@@ -20,7 +20,8 @@ export class ArticleService {
       const skip = (pageNum - 1) * limitNum;
 
       // Build query
-      const filter: any = { status: 'published' };
+      // Include scraped, processed, and published articles so content shows immediately
+      const filter: any = { status: { $in: ['scraped', 'processed', 'published'] } };
 
       if (category) {
         // Check if category is a valid ObjectId (24 hex characters)
@@ -96,8 +97,11 @@ export class ArticleService {
         }
       }
 
-      // Get from database
-      const article = await Article.findOne({ slug, status: 'published' })
+      // Get from database - include scraped/processed/published
+      const article = await Article.findOne({ 
+        slug, 
+        status: { $in: ['scraped', 'processed', 'published'] } 
+      })
         .populate('category', 'key label icon color')
         .populate('source.sourceId', 'name');
 
@@ -169,12 +173,12 @@ export class ArticleService {
         }
       }
 
-      // Get trending articles (published in last 7 days with most views)
+      // Get trending articles (any status, last 7 days, most views)
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
       const trending = await Article.find({
-        status: 'published',
+        status: { $in: ['scraped', 'processed', 'published'] },
         publishedAt: { $gte: sevenDaysAgo },
       })
         .populate('category', 'key label icon color')
