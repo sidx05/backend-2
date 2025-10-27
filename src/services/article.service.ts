@@ -28,8 +28,11 @@ export class ArticleService {
         const isObjectId = /^[0-9a-fA-F]{24}$/.test(category);
         
         if (isObjectId) {
-          // If it's an ObjectId, search in the category field
-          filter.category = category;
+          // Try to match in both category field (as string) and categories array
+          filter.$or = [
+            { category: category },  // Match as string (current DB format)
+            { categories: { $in: [category] } }  // Match in array
+          ];
         } else {
           // If it's a string, search in the categories array
           filter.categories = { $in: [category.toLowerCase()] };
