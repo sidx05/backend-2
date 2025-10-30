@@ -221,11 +221,11 @@ async function seed() {
         categories: [catByKey("news")],
         active: true,
       },
-      // Business Standard - Latest News (for Latest News section only)
+      // Scroll.in - Latest News (for Latest News section only)
       {
-        name: "Business Standard Latest News",
-        url: "https://www.business-standard.com",
-        rssUrls: ["https://www.business-standard.com/rss/latest.rss"],
+        name: "Scroll.in Latest News",
+        url: "https://scroll.in",
+        rssUrls: ["https://feeds.feedburner.com/ScrollinArticles.rss"],
         lang: "en",
         categories: [catByKey("trending")], // Use 'trending' category to separate from main news
         active: true,
