@@ -12,6 +12,10 @@ export interface ISource extends Document {
   createdAt: Date;
   updatedAt: Date;
   type: 'rss' | 'api';
+  metadata?: {
+    isLatestNews?: boolean;
+    [key: string]: any;
+  };
 }
 
 const sourceSchema = new Schema<ISource>({
@@ -46,7 +50,11 @@ const sourceSchema = new Schema<ISource>({
   lastScraped: {
     type: Date
   },
-  type: { type: String, enum: ['rss', 'api'], default: 'rss' }
+  type: { type: String, enum: ['rss', 'api'], default: 'rss' },
+  metadata: {
+    type: Schema.Types.Mixed,
+    default: {}
+  }
 }, {
   timestamps: true
 });
@@ -55,5 +63,6 @@ const sourceSchema = new Schema<ISource>({
 sourceSchema.index({ active: 1, lang: 1 });
 sourceSchema.index({ categories: 1 });
 sourceSchema.index({ lastScraped: 1 });
+sourceSchema.index({ 'metadata.isLatestNews': 1 });
 
 export const Source = mongoose.model<ISource>('Source', sourceSchema);

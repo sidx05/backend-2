@@ -736,7 +736,17 @@ async function seed() {
     ];
 
     // Insert all sources
-    await Source.insertMany(sourcesData);
+    console.log(`🌱 Inserting ${sourcesData.length} sources...`);
+    const insertedSources = await Source.insertMany(sourcesData);
+    console.log(`✅ Inserted ${insertedSources.length} sources`);
+    
+    // Verify Scroll.in source was inserted
+    const scrollSource = await Source.findOne({ 'metadata.isLatestNews': true });
+    if (scrollSource) {
+      console.log(`✅ Scroll.in Latest News source created: ${scrollSource._id}`);
+    } else {
+      console.error(`❌ WARNING: Scroll.in Latest News source NOT found!`);
+    }
 
     console.log("✅ Seeding complete.");
   } catch (err) {
