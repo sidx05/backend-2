@@ -739,3 +739,6 @@
 {"level":"error","message":"Error scraping RSS for Conflict News (Unofficial): No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:26:11.117Z"}
 {"level":"error","message":"Error scraping RSS for WHO News: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:26:50.074Z"}
 {"level":"error","message":"Error scraping RSS for Healthline: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:27:07.746Z"}
+{"level":"error","message":"Error scraping RSS for Reuters World News: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T11:04:45.725Z"}
+{"level":"error","message":"Error scraping RSS for Hindustan Times: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T11:06:05.425Z"}
+{"level":"error","message":"Error scraping RSS for The Verge - AI: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T11:08:16.658Z"}

@@ -221,11 +221,11 @@ async function seed() {
         categories: [catByKey("news")],
         active: true,
       },
-      // The Hindu - Latest News (for Latest News section only)
+      // Business Standard - Latest News (for Latest News section only)
       {
-        name: "The Hindu Latest News",
-        url: "https://www.thehindu.com",
-        rssUrls: ["https://www.thehindu.com/news/national/?service=rss"],
+        name: "Business Standard Latest News",
+        url: "https://www.business-standard.com",
+        rssUrls: ["https://www.business-standard.com/rss/latest.rss"],
         lang: "en",
         categories: [catByKey("trending")], // Use 'trending' category to separate from main news
         active: true,
