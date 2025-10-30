@@ -138,10 +138,26 @@ export class ArticleService {
         }
       }
 
-      // Get from database
-      const article = await Article.findById(id)
+        // Get from database - support both ObjectId and slug
+        let article;
+        // Check if it's a valid MongoDB ObjectId (24 hex characters)
+        if (/^[0-9a-fA-F]{24}$/.test(id)) {
+          article = await Article.findById(id)
+            .populate('category', 'key label icon color')
+            .populate('source.sourceId', 'name');
+        } else {
+          // Assume it's a slug
+          article = await Article.findOne({ slug: id })
+            .populate('category', 'key label icon color')
+            .populate('source.sourceId', 'name');
+        }
+
+        // Fallback: If not found and looks like it could be a slug, try without the check
+        if (!article) {
+          article = await Article.findOne({ slug: id })
         .populate('category', 'key label icon color')
         .populate('source.sourceId', 'name');
+        }
 
       if (!article) {
         throw new Error('Article not found');
