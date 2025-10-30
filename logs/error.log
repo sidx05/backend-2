@@ -731,3 +731,11 @@
 {"level":"error","message":"Failed to fetch article body for https://telugu.oneindia.com/health/put-4-seeds-in-your-mouth-in-the-morning-sugar-and-gas-will-go-away-457589.html: AxiosError: Request failed with status code 500","service":"newshub-backend","timestamp":"2025-10-30T09:31:18.724Z"}
 {"level":"error","message":"Failed to fetch article body for https://telugu.oneindia.com/health/diabetics-are-often-advised-to-consume-ragi-as-a-good-substitute-for-white-rice-and-wheat-011-457427.html: AxiosError: Request failed with status code 408","service":"newshub-backend","timestamp":"2025-10-30T09:33:13.784Z"}
 {"level":"error","message":"Failed to fetch article body for https://telugu.oneindia.com/health/natural-solutions-for-hair-growth-in-middle-age-011-457205.html: AxiosError: Request failed with status code 500","service":"newshub-backend","timestamp":"2025-10-30T09:34:36.749Z"}
+{"level":"error","message":"Error scraping RSS for Reuters World News: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:19:06.574Z"}
+{"level":"error","message":"Error scraping RSS for Hindustan Times: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:20:32.609Z"}
+{"level":"error","message":"Error scraping RSS for The Verge - AI: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:22:46.102Z"}
+{"level":"error","message":"Error scraping RSS for Al Jazeera - Middle East: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:25:47.015Z"}
+{"level":"error","message":"Error scraping RSS for Reuters - World News: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:26:05.611Z"}
+{"level":"error","message":"Error scraping RSS for Conflict News (Unofficial): No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:26:11.117Z"}
+{"level":"error","message":"Error scraping RSS for WHO News: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:26:50.074Z"}
+{"level":"error","message":"Error scraping RSS for Healthline: No items after all attempts","service":"newshub-backend","timestamp":"2025-10-30T10:27:07.746Z"}
