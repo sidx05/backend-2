@@ -221,6 +221,18 @@ async function seed() {
         categories: [catByKey("news")],
         active: true,
       },
+      // The Hindu - Latest News (for Latest News section only)
+      {
+        name: "The Hindu Latest News",
+        url: "https://www.thehindu.com",
+        rssUrls: ["https://www.thehindu.com/news/national/?service=rss"],
+        lang: "en",
+        categories: [catByKey("trending")], // Use 'trending' category to separate from main news
+        active: true,
+        metadata: {
+          isLatestNews: true, // Special flag to identify latest news articles
+        }
+      },
       {
         name: "Indian Express",
         url: "https://indianexpress.com",
