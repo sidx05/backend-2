@@ -353,8 +353,17 @@ export class AdminController {
   // inside AdminController
 async triggerScrape(req: any, res: any) {
     try {
-      const result = await this.scrapingService.scrapeAllSources();
-      return res.json({ success: true, count: result.length });
+      // Fire-and-forget to avoid blocking the HTTP response; log outcome
+      this.scrapingService
+        .scrapeAllSources()
+        .then((result: ScrapedArticle[]) => {
+          logger.info(`Scrape completed. Articles: ${result.length}`);
+        })
+        .catch((err: any) => {
+          logger.error('Background scrape failed', err);
+        });
+
+      return res.status(202).json({ success: true, message: 'Scrape started' });
     } catch (err) {
       console.error("triggerScrape failed", err);
       return res.status(500).json({ success: false, error: "Scrape failed" });
