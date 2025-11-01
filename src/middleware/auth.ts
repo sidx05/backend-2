@@ -46,24 +46,24 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
     const jwtSecret = process.env.JWT_SECRET;
 
+    // 1) Always allow static ADMIN_TOKEN if it matches, regardless of JWT config
+    const adminToken = getOrGenerateAdminToken();
+    if (adminToken && auth === `Bearer ${adminToken}`) {
+      (req as any).auth = { userId: 'admin', roles: ['admin'] };
+      return next();
+    }
+
+    // 2) Otherwise, if JWT_SECRET is set, try verifying a JWT Bearer token
     if (jwtSecret && auth.startsWith('Bearer ')) {
       const token = auth.slice(7).trim();
       try {
         const decoded = jwt.verify(token, jwtSecret) as TokenPayload;
-        // attach minimal auth info to request
         (req as any).auth = { userId: decoded.sub, roles: decoded.roles || [] };
         return next();
       } catch (err) {
         logger.warn('JWT verification failed', { err });
         return res.status(401).json({ error: 'Invalid token' });
       }
-    }
-
-    // Fallback: check ADMIN_TOKEN (simple dev mode)
-    const adminToken = getOrGenerateAdminToken();
-    if (auth === `Bearer ${adminToken}`) {
-      (req as any).auth = { userId: 'admin', roles: ['admin'] };
-      return next();
     }
 
     return res.status(401).json({ error: 'Unauthorized' });
