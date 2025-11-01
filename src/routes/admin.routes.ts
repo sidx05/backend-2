@@ -25,6 +25,7 @@ router.get('/articles', adminController.getArticles);
 router.post('/sources', adminController.createSource);
 router.patch('/sources/:id', adminController.updateSource);
 router.get('/sources', adminController.getSources);
+router.delete('/sources/:id', adminController.deleteSource);
 
 // Category management
 router.post('/categories', adminController.createCategory);

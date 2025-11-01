@@ -239,6 +239,24 @@ export class AdminController {
     }
   };
 
+  deleteSource = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const source = await this.sourceService.deleteSource(id);
+      res.json({
+        success: true,
+        message: 'Source deleted successfully',
+        data: source,
+      });
+    } catch (error) {
+      logger.error('Delete source controller error:', error);
+      if (error instanceof Error && error.message === 'Source not found') {
+        return res.status(404).json({ success: false, error: 'Not Found', message: error.message });
+      }
+      res.status(500).json({ success: false, error: 'Internal Server Error', message: 'Failed to delete source' });
+    }
+  };
+
   getSources = async (req: Request, res: Response) => {
     try {
       const filters: any = {};
