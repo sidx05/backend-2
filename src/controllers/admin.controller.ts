@@ -13,6 +13,8 @@ import {
   updateCategorySchema,
 } from '../utils/validation';
 import { logger } from '../utils/logger';
+import mongoose from 'mongoose';
+import { getMongoUri, maskMongoUri } from '../config/mongoUri';
 
 export class AdminController {
   private scrapingService: ScrapingService;
@@ -26,6 +28,15 @@ export class AdminController {
     this.categoryService = new CategoryService();
     this.scrapingService = new ScrapingService();
   }
+
+  // In-memory scrape status for quick diagnostics
+  private static lastScrapeStatus: {
+    startedAt?: string;
+    finishedAt?: string;
+    activeSources?: number;
+    articlesInserted?: number;
+    error?: string;
+  } = {};
 
   // Article management
   createArticle = async (req: Request, res: Response) => {
@@ -349,6 +360,36 @@ export class AdminController {
     }
   };
 
+  // Debug: return DB info and collection counts (admin only)
+  dbInfo = async (req: Request, res: Response) => {
+    try {
+      const uri = getMongoUri();
+      const masked = maskMongoUri(uri);
+      const conn = mongoose.connection;
+      const dbName = conn?.db?.databaseName || 'unknown';
+      const [articles, sources] = await Promise.all([
+        (await import('../models/Article')).Article.countDocuments({}),
+        (await import('../models/Source')).Source.countDocuments({}),
+      ]);
+      res.json({
+        success: true,
+        data: {
+          uri: masked,
+          dbName,
+          counts: { articles, sources },
+        },
+      });
+    } catch (error) {
+      logger.error('dbInfo error', error);
+      res.status(500).json({ success: false, error: 'Failed to fetch DB info' });
+    }
+  };
+
+  // Return last scrape status (since process start)
+  scrapeStatus = async (req: Request, res: Response) => {
+    res.json({ success: true, data: AdminController.lastScrapeStatus });
+  };
+
     // Ingest management
   // inside AdminController
 async triggerScrape(req: any, res: any) {
@@ -362,14 +403,29 @@ async triggerScrape(req: any, res: any) {
         activeCount = 0;
       }
 
+      logger.info(`Admin scrape trigger received. Active sources: ${activeCount}`);
+      AdminController.lastScrapeStatus = {
+        startedAt: new Date().toISOString(),
+        activeSources: activeCount,
+      };
       // Fire-and-forget to avoid blocking the HTTP response; log outcome
       this.scrapingService
         .scrapeAllSources()
         .then((result: ScrapedArticle[]) => {
           logger.info(`Scrape completed. Articles: ${result.length}`);
+          AdminController.lastScrapeStatus = {
+            ...AdminController.lastScrapeStatus,
+            finishedAt: new Date().toISOString(),
+            articlesInserted: result.length,
+          };
         })
         .catch((err: any) => {
           logger.error('Background scrape failed', err);
+          AdminController.lastScrapeStatus = {
+            ...AdminController.lastScrapeStatus,
+            finishedAt: new Date().toISOString(),
+            error: String(err?.message || err),
+          };
         });
 
       return res.status(202).json({ success: true, message: 'Scrape started', queuedSources: activeCount });

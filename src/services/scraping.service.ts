@@ -2,6 +2,7 @@ import Parser from "rss-parser";
 import axios from "axios";
 import * as cheerio from "cheerio";
 import crypto from "crypto";
+import slugify from "slugify";
 import connectDB from "../config/database";
 import { logger } from "../utils/logger"; // make sure this exists
 import { Source } from "../models/Source";
@@ -178,16 +179,38 @@ export class ScrapingService {
         try {
           const articles = await this.scrapeSource(source);
           for (const scraped of articles) {
-            await Article.create({
-              title: scraped.title,
-              summary: scraped.summary,
-              content: scraped.content,
-              url: scraped.sourceUrl,
-              hash: scraped.hash,
-              category: scraped.category,
-              images: scraped.images || [],
-              publishedAt: scraped.publishedAt,
-            });
+            try {
+              if (!scraped.sourceUrl) {
+                // canonicalUrl is required; skip if missing
+                continue;
+              }
+              const wc = (scraped.content || "").split(/\s+/).filter(Boolean).length;
+              await Article.create({
+                title: scraped.title,
+                slug: slugify(scraped.title || "untitled", { lower: true, strict: true }) + "-" + Date.now(),
+                summary: scraped.summary?.substring(0, 300) || "",
+                content: scraped.content || "",
+                images: scraped.images || [],
+                // Keep ObjectId category empty; use categories strings for now
+                categories: scraped.category ? [scraped.category] : [],
+                categoryDetected: scraped.category || undefined,
+                tags: scraped.tags || [],
+                author: scraped.author || source.name,
+                language: source.lang || "en",
+                source: { name: source.name, url: source.url, sourceId: source._id },
+                status: "scraped",
+                publishedAt: scraped.publishedAt,
+                scrapedAt: new Date(),
+                canonicalUrl: scraped.sourceUrl,
+                thumbnail: scraped.images && scraped.images[0] ? scraped.images[0].url : undefined,
+                wordCount: wc,
+                readingTime: Math.ceil(wc / 200) || 1,
+                seo: { metaDescription: (scraped.summary || scraped.content || scraped.title || "").slice(0, 160), keywords: [] },
+                hash: scraped.hash,
+              } as any);
+            } catch (e) {
+              logger.error(`❌ Failed to insert article '${scraped.title}': ${(e as Error).message}`);
+            }
           }
 
           allArticles = allArticles.concat(articles);

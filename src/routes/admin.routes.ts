@@ -34,5 +34,9 @@ router.patch('/categories/:id', adminController.updateCategory);
 // Ingest management
 router.post("/scrape", adminController.triggerScrape.bind(adminController));
 
+// Debug
+router.get("/debug/db", adminController.dbInfo);
+router.get("/scrape/status", adminController.scrapeStatus);
+
 
 export default router;

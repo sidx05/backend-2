@@ -1,11 +1,12 @@
 import mongoose from "mongoose";
 import { logger } from "../utils/logger";
+import { getMongoUri, maskMongoUri } from "../config/mongoUri";
 
 export async function connectDB() {
   try {
-    const uri = process.env.DATABASE_URL || "mongodb://localhost:27017/newshub";
+    const uri = getMongoUri();
     await mongoose.connect(uri);
-    logger.info("✅ Connected to MongoDB (Mongoose)");
+    logger.info(`✅ Connected to MongoDB (Mongoose) ${maskMongoUri(uri)}`);
   } catch (err) {
     logger.error("❌ Failed to connect MongoDB", err);
     process.exit(1);

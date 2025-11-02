@@ -13,7 +13,8 @@
     "lint": "eslint src/**/*.ts",
     "seed": "ts-node scripts/seed.ts",
     "worker": "ts-node src/worker.ts",
-    "scrape": "ts-node scripts/runScraper.ts"
+    "scrape": "ts-node scripts/runScraper.ts",
+    "copy-db": "ts-node scripts/copy-db.ts"
   },
   "keywords": [
     "news",
