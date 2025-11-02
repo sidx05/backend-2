@@ -439,6 +439,17 @@ async triggerScrape(req: any, res: any) {
             articlesInserted: result.stats?.total?.inserted ?? result.articles.length,
             ...result.stats,
           } as any;
+
+          // Auto-enrich after a fast scrape unless explicitly skipped
+          if (mode === 'fast' && (req.query?.skipEnrich !== 'true')) {
+            const limit = Math.min(500, Number(result.stats?.total?.inserted || 300));
+            const minWords = Math.max(80, Number(req.query?.minWords || 100));
+            const recentMinutes = Math.max(15, Number(req.query?.recentMinutes || 120));
+            logger.info(`Triggering post-scrape enrichment: limit=${limit} minWords=${minWords} recentMinutes=${recentMinutes}`);
+            this.scrapingService.enrichArticles({ limit, minWords, recentMinutes }).catch((e)=>{
+              logger.error('Auto enrichment failed', e);
+            });
+          }
         })
         .catch((err: any) => {
           logger.error('Background scrape failed', err);

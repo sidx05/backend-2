@@ -41,6 +41,8 @@ const ARTICLE_SCRAPE_TIMEOUT = 8000; // 8 seconds max per article
 
 // Concurrency for sources scraping
 const SOURCE_BATCH_SIZE = 5;
+// Concurrency for per-source article processing
+const ITEM_CONCURRENCY = 6;
 
 export interface ScrapedArticle {
   title: string;
@@ -346,18 +348,18 @@ export class ScrapingService {
             rssFetched++;
             const items = Array.isArray(feed.items) ? feed.items : [];
             itemsSeen += items.length;
-            
-            for (const item of items) {
-              const scraped = await Promise.race([
-                this.scrapeArticle(item, source, options),
-                new Promise<null>((_, reject) => 
-                  setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
-                )
-              ]).catch(err => {
-                logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${err.message}`);
-                return null;
-              });
-              if (scraped) articles.push(scraped);
+            for (let j = 0; j < items.length; j += ITEM_CONCURRENCY) {
+              const chunk = items.slice(j, j + ITEM_CONCURRENCY);
+              const results = await Promise.allSettled(chunk.map((item) =>
+                Promise.race([
+                  this.scrapeArticle(item, source, options),
+                  new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT))
+                ])
+              ));
+              for (const r of results) {
+                if (r.status === 'fulfilled' && r.value) articles.push(r.value);
+                else if (r.status === 'rejected') logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${(r.reason as Error)?.message || r.reason}`);
+              }
             }
           } catch (err: unknown) {
             logger.error(`❌ Error parsing RSS feed ${rssUrl}: ${(err as Error).message}`);
@@ -378,17 +380,19 @@ export class ScrapingService {
 
           logger.info(`DEBUG API articles count: ${resp.data?.articles?.length || 0}`);
 
-          for (const item of resp.data.articles || []) {
-            const scraped = await Promise.race([
-              this.scrapeArticle(item, source, options),
-              new Promise<null>((_, reject) => 
-                setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
-              )
-            ]).catch(err => {
-              logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${err.message}`);
-              return null;
-            });
-            if (scraped) articles.push(scraped);
+          const apiItems = resp.data.articles || [];
+          for (let j = 0; j < apiItems.length; j += ITEM_CONCURRENCY) {
+            const chunk = apiItems.slice(j, j + ITEM_CONCURRENCY);
+            const results = await Promise.allSettled(chunk.map((item: any) =>
+              Promise.race([
+                this.scrapeArticle(item, source, options),
+                new Promise<null>((_, reject) => setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT))
+              ])
+            ));
+            for (const r of results) {
+              if (r.status === 'fulfilled' && r.value) articles.push(r.value);
+              else if (r.status === 'rejected') logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${(r.reason as Error)?.message || r.reason}`);
+            }
           }
         } catch (err: unknown) {
           logger.error(`❌ Error fetching API for ${source.name}: ${(err as Error).message}`);
@@ -438,12 +442,13 @@ export class ScrapingService {
         images = this.extractImages(fullContent, link, openGraphData);
       }
 
-      // 2) RSS enclosure/media:content
+      // 2) RSS enclosure/media:content/media:thumbnail
       if (images.length === 0) {
         const enclosureUrl = (item as any)?.enclosure?.url || (item as any)?.enclosure?.url || (item as any)?.enclosureUrl;
-        const mediaContent = (item as any)?.["media:content"]?.url || (item as any)?.media?.content?.url || (item as any)?.mediaContentUrl;
+        const mediaContent = (item as any)?.["media:content"]?.url || (item as any)?.media?.content?.url || (item as any)?.mediaContentUrl || (item as any)?.media?.["content"]?.[0]?.url;
+        const mediaThumb = (item as any)?.["media:thumbnail"]?.url || (item as any)?.media?.thumbnail?.url;
         const thumb = (item as any)?.thumbnail || (item as any)?.image;
-        const rssImg = enclosureUrl || mediaContent || thumb;
+        const rssImg = enclosureUrl || mediaContent || mediaThumb || thumb;
         if (rssImg && this.isValidArticleImage(String(rssImg), title, 0, 0)) {
           try {
             const fullUrl = String(rssImg).startsWith('http') ? String(rssImg) : new URL(String(rssImg), link).href;
@@ -507,12 +512,13 @@ export class ScrapingService {
   }
 
   // Enrich already-scraped articles by fetching full HTML and updating content/images
-  async enrichArticles(params?: { limit?: number; minWords?: number; concurrency?: number }) {
+  async enrichArticles(params?: { limit?: number; minWords?: number; concurrency?: number; recentMinutes?: number }) {
     const limit = params?.limit ?? 200;
     const minWords = params?.minWords ?? 80;
     const concurrency = params?.concurrency ?? 5;
+    const recentMinutes = params?.recentMinutes;
 
-    const candidates = await Article.find({
+    const filter: any = {
       status: { $in: ["scraped", "processed", null as any] },
       $or: [
         { wordCount: { $exists: false } },
@@ -520,7 +526,12 @@ export class ScrapingService {
         { content: { $exists: false } },
         { content: "" },
       ],
-    })
+    };
+    if (recentMinutes && Number.isFinite(recentMinutes)) {
+      filter.scrapedAt = { $gte: new Date(Date.now() - recentMinutes * 60 * 1000) };
+    }
+
+    const candidates = await Article.find(filter)
       .sort({ scrapedAt: -1 })
       .limit(limit);
 
@@ -570,7 +581,7 @@ export class ScrapingService {
     }
 
     logger.info(`✅ Enrichment finished. Processed: ${processed}, Improved: ${improved}, Failed: ${failed}`);
-    return { processed, improved, failed, limit, minWords };
+    return { processed, improved, failed, limit, minWords, recentMinutes };
   }
   private async fetchArticleContent(url: string): Promise<string> {
     return this.retryRequest(async () => {
@@ -650,6 +661,7 @@ export class ScrapingService {
     const excludePatterns = [
       'logo',
       'icon',
+      'favicon',
       'avatar',
       'badge',
       'button',
@@ -657,11 +669,15 @@ export class ScrapingService {
       'ad',
       'advertisement',
       'sprite',
+      'sprites',
       'pixel',
       'tracking',
       '1x1',
       'blank.gif',
-      'spacer.gif'
+      'spacer.gif',
+      'placeholder',
+      'default',
+      'og-image'
     ];
     
     for (const pattern of excludePatterns) {
