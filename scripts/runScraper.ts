@@ -563,9 +563,15 @@ async function scrape() {
               item.link || item.title || JSON.stringify(item).slice(0, 200)
             );
 
-            const exists = await Article.findOne({ hash });
+            // Check for duplicates by hash OR canonicalUrl
+            const exists = await Article.findOne({ 
+              $or: [
+                { hash },
+                { canonicalUrl: item.link || "" }
+              ]
+            });
             if (exists) {
-              continue;
+              continue; // Skip silently
             }
 
             
@@ -644,9 +650,18 @@ async function scrape() {
               hash,
             });
 
-            await articleDoc.save();
-            totalSaved++;
-            logger.info(`✅ Saved: ${truncate(articleDoc.title, 60)}`);
+            try {
+              await articleDoc.save();
+              totalSaved++;
+              logger.info(`✅ Saved: ${truncate(articleDoc.title, 60)}`);
+            } catch (saveErr: any) {
+              // Handle duplicate key errors gracefully
+              if (saveErr.code === 11000) {
+                // Silently skip duplicates
+                continue;
+              }
+              throw saveErr; // Re-throw other errors
+            }
           } catch (innerErr) {
             logger.error(`Error saving article from ${rssUrl}: ${innerErr}`);
           }
