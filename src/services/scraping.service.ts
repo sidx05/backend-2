@@ -32,8 +32,12 @@ let currentProxyIndex = 0;
 let currentUserAgentIndex = 0;
 
 // Rate limiting
-const RATE_LIMIT_DELAY = 2000; // 2 seconds between requests
+const RATE_LIMIT_DELAY = 1000; // 1 second between requests (faster)
 let lastRequestTime = 0;
+
+// Timeout settings
+const REQUEST_TIMEOUT = 10000; // 10 seconds max per request
+const ARTICLE_SCRAPE_TIMEOUT = 15000; // 15 seconds max per article
 
 export interface ScrapedArticle {
   title: string;
@@ -94,7 +98,7 @@ export class ScrapingService {
   // Create axios instance with proper headers and proxy
   private createAxiosInstance(useProxy = false) {
     const config: any = {
-      timeout: 15000,
+      timeout: REQUEST_TIMEOUT,
       headers: {
         'User-Agent': this.getNextUserAgent(),
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -172,26 +176,53 @@ export class ScrapingService {
     try {
       logger.info("🔹 Starting scraping for all sources");
       const sources = await Source.find({ active: true });
+      logger.info(`📋 Found ${sources.length} active sources to scrape`);
 
       let allArticles: ScrapedArticle[] = [];
+      let successCount = 0;
+      let failCount = 0;
 
       for (const source of sources) {
         try {
+          logger.info(`🔄 Scraping source ${successCount + failCount + 1}/${sources.length}: ${source.name}`);
           const articles = await this.scrapeSource(source);
+          let insertedCount = 0;
+          
           for (const scraped of articles) {
             try {
+              // Validate required fields
               if (!scraped.sourceUrl) {
-                // canonicalUrl is required; skip if missing
+                logger.warn(`❌ Skipping article: Missing canonicalUrl/sourceUrl for '${scraped.title}'`);
                 continue;
+              }
+              if (!source._id) {
+                logger.warn(`❌ Skipping article: Missing sourceId for source '${source.name}'`);
+                continue;
+              }
+              
+              // Quick duplicate check by canonicalUrl
+              const existingByUrl = await Article.findOne({ canonicalUrl: scraped.sourceUrl });
+              if (existingByUrl) {
+                continue; // Skip duplicates silently
+              }
+              
+              // Check for slug collision
+              let baseSlug = slugify(scraped.title || "untitled", { lower: true, strict: true });
+              let slug = baseSlug;
+              let slugCollision = await Article.findOne({ slug });
+              let slugSuffix = 1;
+              while (slugCollision) {
+                slug = `${baseSlug}-${Date.now()}-${slugSuffix}`;
+                slugCollision = await Article.findOne({ slug });
+                slugSuffix++;
               }
               const wc = (scraped.content || "").split(/\s+/).filter(Boolean).length;
               await Article.create({
                 title: scraped.title,
-                slug: slugify(scraped.title || "untitled", { lower: true, strict: true }) + "-" + Date.now(),
+                slug,
                 summary: scraped.summary?.substring(0, 300) || "",
                 content: scraped.content || "",
                 images: scraped.images || [],
-                // Keep ObjectId category empty; use categories strings for now
                 categories: scraped.category ? [scraped.category] : [],
                 categoryDetected: scraped.category || undefined,
                 tags: scraped.tags || [],
@@ -208,22 +239,26 @@ export class ScrapingService {
                 seo: { metaDescription: (scraped.summary || scraped.content || scraped.title || "").slice(0, 160), keywords: [] },
                 hash: scraped.hash,
               } as any);
+              insertedCount++;
             } catch (e) {
               logger.error(`❌ Failed to insert article '${scraped.title}': ${(e as Error).message}`);
             }
           }
 
           allArticles = allArticles.concat(articles);
+          logger.info(`✅ ${source.name}: ${insertedCount} new articles inserted (${articles.length} total scraped)`);
+          successCount++;
 
           await Source.findByIdAndUpdate(source._id, {
             lastScraped: new Date(),
           });
         } catch (err: unknown) {
           logger.error(`❌ Error scraping source ${source.name}: ${(err as Error).message}`);
+          failCount++;
         }
       }
 
-      logger.info(`✅ Scraping completed. Total articles: ${allArticles.length}`);
+      logger.info(`✅ Scraping completed. Success: ${successCount}, Failed: ${failCount}, Total articles: ${allArticles.length}`);
       return allArticles;
     } catch (err: unknown) {
       logger.error(`❌ scrapeAllSources error: ${(err as Error).message}`);
@@ -245,7 +280,15 @@ export class ScrapingService {
             });
             
             for (const item of feed.items) {
-              const scraped = await this.scrapeArticle(item, source);
+              const scraped = await Promise.race([
+                this.scrapeArticle(item, source),
+                new Promise<null>((_, reject) => 
+                  setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
+                )
+              ]).catch(err => {
+                logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${err.message}`);
+                return null;
+              });
               if (scraped) articles.push(scraped);
             }
           } catch (err: unknown) {
@@ -267,7 +310,15 @@ export class ScrapingService {
           logger.info(`DEBUG API articles count: ${resp.data?.articles?.length || 0}`);
 
           for (const item of resp.data.articles || []) {
-            const scraped = await this.scrapeArticle(item, source);
+            const scraped = await Promise.race([
+              this.scrapeArticle(item, source),
+              new Promise<null>((_, reject) => 
+                setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
+              )
+            ]).catch(err => {
+              logger.warn(`⏱️ Timeout or error scraping article from ${source.name}: ${err.message}`);
+              return null;
+            });
             if (scraped) articles.push(scraped);
           }
         } catch (err: unknown) {
@@ -308,12 +359,26 @@ export class ScrapingService {
       const fullContent = source.type === "api" ? summary : await this.fetchArticleContent(link);
       const openGraphData = await this.extractOpenGraphData(link);
 
-      let images: ScrapedArticle["images"] = item.urlToImage
-        ? [{ url: item.urlToImage, alt: title, source: "api" }]
-        : this.extractImages(fullContent, link, openGraphData);
-
+      // Priority: scraped article images > API images > Open Graph images
+      let images: ScrapedArticle["images"] = [];
+      
+      // First, try to extract images from article HTML
+      if (fullContent) {
+        images = this.extractImages(fullContent, link, openGraphData);
+      }
+      
+      // Fallback to API-provided image if no good images found
+      if (images.length === 0 && item.urlToImage) {
+        images.push({ url: item.urlToImage, alt: title, source: "api" });
+      }
+      
+      // Last resort: Open Graph image (often a logo)
       if (images.length === 0 && openGraphData && 'image' in openGraphData && openGraphData.image) {
-        images.push({ url: openGraphData.image, alt: title, caption: "Open Graph image", source: "opengraph" });
+        // Only use if it doesn't look like a logo
+        const ogImage = openGraphData.image;
+        if (!ogImage.toLowerCase().includes('logo') && !ogImage.toLowerCase().includes('icon')) {
+          images.push({ url: ogImage, alt: title, caption: "Open Graph image", source: "opengraph" });
+        }
       }
 
       const category = await this.determineCategory(title, summary, source.categories);
@@ -356,16 +421,92 @@ export class ScrapingService {
     const $ = cheerio.load(html);
     const images: any[] = [];
 
-    $("img").each((_, el) => {
-      const src = $(el).attr("src");
-      const alt = $(el).attr("alt") || "Article image";
-      if (src) {
-        const fullUrl = src.startsWith("http") ? src : new URL(src, baseUrl).href;
-        images.push({ url: fullUrl, alt, source: "scraped" });
-      }
-    });
+    // Look for images in article content first
+    const articleSelectors = [
+      'article img',
+      '[itemprop="articleBody"] img',
+      '.article-content img',
+      '.post-content img',
+      '.entry-content img',
+      'main img'
+    ];
+    
+    for (const selector of articleSelectors) {
+      $(selector).each((_, el) => {
+        const src = $(el).attr("src") || $(el).attr("data-src");
+        const alt = $(el).attr("alt") || "Article image";
+        const width = parseInt($(el).attr("width") || "0");
+        const height = parseInt($(el).attr("height") || "0");
+        
+        if (src && this.isValidArticleImage(src, alt, width, height)) {
+          try {
+            const fullUrl = src.startsWith("http") ? src : new URL(src, baseUrl).href;
+            images.push({ url: fullUrl, alt, source: "scraped", width, height });
+          } catch (e) {
+            // Skip invalid URLs
+          }
+        }
+      });
+      
+      if (images.length > 0) break; // Found images in article content
+    }
+    
+    // Fallback to all images if no article images found
+    if (images.length === 0) {
+      $("img").each((_, el) => {
+        const src = $(el).attr("src") || $(el).attr("data-src");
+        const alt = $(el).attr("alt") || "Article image";
+        const width = parseInt($(el).attr("width") || "0");
+        const height = parseInt($(el).attr("height") || "0");
+        
+        if (src && this.isValidArticleImage(src, alt, width, height)) {
+          try {
+            const fullUrl = src.startsWith("http") ? src : new URL(src, baseUrl).href;
+            images.push({ url: fullUrl, alt, source: "scraped", width, height });
+          } catch (e) {
+            // Skip invalid URLs
+          }
+        }
+      });
+    }
 
     return [...new Map(images.map((img) => [img.url, img])).values()].slice(0, 5);
+  }
+  
+  private isValidArticleImage(src: string, alt: string, width: number, height: number): boolean {
+    const srcLower = src.toLowerCase();
+    const altLower = alt.toLowerCase();
+    
+    // Filter out logos, icons, ads, and tracking pixels
+    const excludePatterns = [
+      'logo',
+      'icon',
+      'avatar',
+      'badge',
+      'button',
+      'banner',
+      'ad',
+      'advertisement',
+      'sprite',
+      'pixel',
+      'tracking',
+      '1x1',
+      'blank.gif',
+      'spacer.gif'
+    ];
+    
+    for (const pattern of excludePatterns) {
+      if (srcLower.includes(pattern) || altLower.includes(pattern)) {
+        return false;
+      }
+    }
+    
+    // Filter out very small images (likely icons/logos)
+    if ((width > 0 && width < 200) || (height > 0 && height < 200)) {
+      return false;
+    }
+    
+    return true;
   }
 
   private generateHash(content: string) {
@@ -425,6 +566,53 @@ export class ScrapingService {
   }
 
   private cleanContent(html: string): string {
-    return cheerio.load(html).text().replace(/\s+/g, " ").trim();
+    if (!html) return "";
+    
+    const $ = cheerio.load(html);
+    
+    // Remove script, style, noscript, iframe, and other non-content elements
+    $('script, style, noscript, iframe, nav, header, footer, aside, .advertisement, .ad, .ads').remove();
+    
+    // Remove JSON-LD structured data
+    $('script[type="application/ld+json"]').remove();
+    
+    // Remove comments
+    $('*').contents().filter(function() {
+      return this.type === 'comment';
+    }).remove();
+    
+    // Try to find the main article content
+    // Common article containers
+    let content = '';
+    const contentSelectors = [
+      'article',
+      '[itemprop="articleBody"]',
+      '.article-content',
+      '.post-content',
+      '.entry-content',
+      'main',
+      '.content',
+      '#content'
+    ];
+    
+    for (const selector of contentSelectors) {
+      const element = $(selector);
+      if (element.length > 0) {
+        content = element.text();
+        break;
+      }
+    }
+    
+    // Fallback to body if no article container found
+    if (!content) {
+      content = $('body').text();
+    }
+    
+    // Clean up whitespace
+    return content
+      .replace(/\s+/g, ' ')
+      .replace(/\n+/g, '\n')
+      .trim()
+      .substring(0, 5000); // Limit content length
   }
 }
