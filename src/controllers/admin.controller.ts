@@ -411,13 +411,14 @@ async triggerScrape(req: any, res: any) {
       // Fire-and-forget to avoid blocking the HTTP response; log outcome
       this.scrapingService
         .scrapeAllSources()
-        .then((result: ScrapedArticle[]) => {
-          logger.info(`Scrape completed. Articles: ${result.length}`);
+        .then((result: { articles: ScrapedArticle[]; stats: any }) => {
+          logger.info(`Scrape completed. Scraped: ${result.articles.length}, Inserted (approx): ${result.stats?.total?.inserted ?? 'n/a'}`);
           AdminController.lastScrapeStatus = {
             ...AdminController.lastScrapeStatus,
             finishedAt: new Date().toISOString(),
-            articlesInserted: result.length,
-          };
+            articlesInserted: result.stats?.total?.inserted ?? result.articles.length,
+            ...result.stats,
+          } as any;
         })
         .catch((err: any) => {
           logger.error('Background scrape failed', err);

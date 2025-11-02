@@ -39,6 +39,9 @@ let lastRequestTime = 0;
 const REQUEST_TIMEOUT = 10000; // 10 seconds max per request
 const ARTICLE_SCRAPE_TIMEOUT = 15000; // 15 seconds max per article
 
+// Concurrency for sources scraping
+const SOURCE_BATCH_SIZE = 5;
+
 export interface ScrapedArticle {
   title: string;
   summary: string;
@@ -49,7 +52,7 @@ export interface ScrapedArticle {
     caption?: string;
     width?: number;
     height?: number;
-    source: "scraped" | "opengraph" | "ai_generated" | "api";
+    source: "scraped" | "opengraph" | "ai_generated" | "api" | "rss";
   }[];
   category: string;
   categories?: string[]; // New field for multiple categories
@@ -172,7 +175,7 @@ export class ScrapingService {
     throw new Error('Max retries exceeded');
   }
 
-  async scrapeAllSources(): Promise<ScrapedArticle[]> {
+  async scrapeAllSources(): Promise<{ articles: ScrapedArticle[]; stats: any }> {
     try {
       logger.info("🔹 Starting scraping for all sources");
       const sources = await Source.find({ active: true });
@@ -181,11 +184,24 @@ export class ScrapingService {
       let allArticles: ScrapedArticle[] = [];
       let successCount = 0;
       let failCount = 0;
+      const perSource: Array<{ sourceId: string; name: string; rssUrls: number; rssFetched: number; rssFailed: number; itemsSeen: number; scrapedOk: number; inserted: number; error?: string }> = [];
 
-      for (const source of sources) {
-        try {
-          logger.info(`🔄 Scraping source ${successCount + failCount + 1}/${sources.length}: ${source.name}`);
-          const articles = await this.scrapeSource(source);
+      // Process sources in small batches to improve throughput
+      for (let i = 0; i < sources.length; i += SOURCE_BATCH_SIZE) {
+        const batch = sources.slice(i, i + SOURCE_BATCH_SIZE);
+        const results = await Promise.allSettled(batch.map(async (source) => {
+          try {
+            logger.info(`🔄 Scraping source ${successCount + failCount + 1}/${sources.length}: ${source.name}`);
+            const { articles, meta } = await this.scrapeSource(source);
+            return { source, articles, meta };
+          } catch (err) {
+            throw { source, err };
+          }
+        }));
+
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            const { source, articles, meta } = r.value as any;
           let insertedCount = 0;
           
           for (const scraped of articles) {
@@ -244,42 +260,94 @@ export class ScrapingService {
               logger.error(`❌ Failed to insert article '${scraped.title}': ${(e as Error).message}`);
             }
           }
+            allArticles = allArticles.concat(articles);
+            logger.info(`✅ ${source.name}: ${insertedCount} new articles inserted (${articles.length} total scraped)`);
+            successCount++;
 
-          allArticles = allArticles.concat(articles);
-          logger.info(`✅ ${source.name}: ${insertedCount} new articles inserted (${articles.length} total scraped)`);
-          successCount++;
-
-          await Source.findByIdAndUpdate(source._id, {
-            lastScraped: new Date(),
-          });
-        } catch (err: unknown) {
-          logger.error(`❌ Error scraping source ${source.name}: ${(err as Error).message}`);
-          failCount++;
+            await Source.findByIdAndUpdate(source._id, {
+              lastScraped: new Date(),
+            });
+            perSource.push({
+              sourceId: String(source._id),
+              name: source.name,
+              rssUrls: Array.isArray(source.rssUrls) ? source.rssUrls.length : 0,
+              rssFetched: meta?.rssFetched ?? 0,
+              rssFailed: meta?.rssFailed ?? 0,
+              itemsSeen: meta?.itemsSeen ?? articles.length,
+              scrapedOk: articles.length,
+              inserted: insertedCount,
+            });
+          } else {
+            const { source, err } = (r as any).reason || {};
+            logger.error(`❌ Error scraping source ${source?.name || 'unknown'}: ${(err as Error)?.message || err}`);
+            failCount++;
+            if (source) {
+              perSource.push({
+                sourceId: String(source._id),
+                name: source.name,
+                rssUrls: Array.isArray(source.rssUrls) ? source.rssUrls.length : 0,
+                rssFetched: 0,
+                rssFailed: Array.isArray(source.rssUrls) ? source.rssUrls.length : 1,
+                itemsSeen: 0,
+                scrapedOk: 0,
+                inserted: 0,
+                error: (err as Error)?.message || String(err),
+              });
+            }
+          }
         }
       }
 
-      logger.info(`✅ Scraping completed. Success: ${successCount}, Failed: ${failCount}, Total articles: ${allArticles.length}`);
-      return allArticles;
+      const stats = {
+        sources: sources.length,
+        success: successCount,
+        failed: failCount,
+        total: {
+          itemsSeen: perSource.reduce((a, s) => a + (s.itemsSeen || 0), 0),
+          scrapedOk: perSource.reduce((a, s) => a + (s.scrapedOk || 0), 0),
+          inserted: perSource.reduce((a, s) => a + (s.inserted || 0), 0),
+        },
+        perSource,
+      };
+      logger.info(`✅ Scraping completed. Success: ${successCount}, Failed: ${failCount}, Inserted: ${stats.total.inserted}, Scraped: ${stats.total.scrapedOk}`);
+      return { articles: allArticles, stats };
     } catch (err: unknown) {
       logger.error(`❌ scrapeAllSources error: ${(err as Error).message}`);
-      return [];
+      return { articles: [], stats: { error: (err as Error).message } };
     }
   }
 
-  async scrapeSource(source: any): Promise<ScrapedArticle[]> {
+  async scrapeSource(source: any): Promise<{ articles: ScrapedArticle[]; meta: { rssUrls: number; rssFetched: number; rssFailed: number; itemsSeen: number } }> {
     try {
       logger.info(`🔹 Scraping source: ${source.name}`);
       const articles: ScrapedArticle[] = [];
+      let rssFetched = 0;
+      let rssFailed = 0;
+      let itemsSeen = 0;
 
       // RSS scraping
       if (source.rssUrls && source.rssUrls.length > 0) {
         for (const rssUrl of source.rssUrls) {
           try {
+            logger.info(`📡 Fetching RSS: ${source.name} -> ${rssUrl}`);
             const feed = await this.retryRequest(async () => {
-              return await this.rssParser.parseURL(rssUrl);
+              try {
+                return await this.rssParser.parseURL(rssUrl);
+              } catch (e) {
+                // Fallback: fetch XML manually and parse string
+                const axiosInstance = this.createAxiosInstance();
+                const resp = await axiosInstance.get(rssUrl, {
+                  headers: { Accept: 'application/rss+xml, application/xml, text/xml;q=0.9,*/*;q=0.8' },
+                  responseType: 'text',
+                });
+                return await this.rssParser.parseString(resp.data);
+              }
             });
+            rssFetched++;
+            const items = Array.isArray(feed.items) ? feed.items : [];
+            itemsSeen += items.length;
             
-            for (const item of feed.items) {
+            for (const item of items) {
               const scraped = await Promise.race([
                 this.scrapeArticle(item, source),
                 new Promise<null>((_, reject) => 
@@ -293,6 +361,7 @@ export class ScrapingService {
             }
           } catch (err: unknown) {
             logger.error(`❌ Error parsing RSS feed ${rssUrl}: ${(err as Error).message}`);
+            rssFailed++;
           }
         }
       }
@@ -326,11 +395,11 @@ export class ScrapingService {
         }
       }
 
-      logger.info(`✅ Scraped ${articles.length} articles from ${source.name}`);
-      return articles;
+      logger.info(`✅ Scraped ${articles.length} articles from ${source.name} (feeds ok: ${rssFetched}, failed: ${rssFailed}, items seen: ${itemsSeen})`);
+      return { articles, meta: { rssUrls: Array.isArray(source.rssUrls) ? source.rssUrls.length : 0, rssFetched, rssFailed, itemsSeen } };
     } catch (err: unknown) {
       logger.error(`❌ scrapeSource error for ${source.name}: ${(err as Error).message}`);
-      return [];
+      return { articles: [], meta: { rssUrls: Array.isArray(source.rssUrls) ? source.rssUrls.length : 0, rssFetched: 0, rssFailed: Array.isArray(source.rssUrls) ? source.rssUrls.length : 1, itemsSeen: 0 } };
     }
   }
 
@@ -359,24 +428,39 @@ export class ScrapingService {
       const fullContent = source.type === "api" ? summary : await this.fetchArticleContent(link);
       const openGraphData = await this.extractOpenGraphData(link);
 
-      // Priority: scraped article images > API images > Open Graph images
+      // Priority: scraped article images > RSS enclosure/media images > API images > Open Graph images
       let images: ScrapedArticle["images"] = [];
-      
-      // First, try to extract images from article HTML
+
+      // 1) Extract from article HTML
       if (fullContent) {
         images = this.extractImages(fullContent, link, openGraphData);
       }
-      
-      // Fallback to API-provided image if no good images found
-      if (images.length === 0 && item.urlToImage) {
-        images.push({ url: item.urlToImage, alt: title, source: "api" });
+
+      // 2) RSS enclosure/media:content
+      if (images.length === 0) {
+        const enclosureUrl = (item as any)?.enclosure?.url || (item as any)?.enclosure?.url || (item as any)?.enclosureUrl;
+        const mediaContent = (item as any)?.["media:content"]?.url || (item as any)?.media?.content?.url || (item as any)?.mediaContentUrl;
+        const thumb = (item as any)?.thumbnail || (item as any)?.image;
+        const rssImg = enclosureUrl || mediaContent || thumb;
+        if (rssImg && this.isValidArticleImage(String(rssImg), title, 0, 0)) {
+          try {
+            const fullUrl = String(rssImg).startsWith('http') ? String(rssImg) : new URL(String(rssImg), link).href;
+            images.push({ url: fullUrl, alt: title, source: 'rss' as any });
+          } catch {}
+        }
       }
-      
-      // Last resort: Open Graph image (often a logo)
-      if (images.length === 0 && openGraphData && 'image' in openGraphData && openGraphData.image) {
-        // Only use if it doesn't look like a logo
-        const ogImage = openGraphData.image;
-        if (!ogImage.toLowerCase().includes('logo') && !ogImage.toLowerCase().includes('icon')) {
+
+      // 3) Fallback to API-provided image
+      if (images.length === 0 && (item as any).urlToImage) {
+        images.push({ url: (item as any).urlToImage, alt: title, source: "api" });
+      }
+
+      // 4) Last resort: Open Graph image (avoid obvious placeholders/logos)
+      if (images.length === 0 && openGraphData && 'image' in openGraphData && (openGraphData as any).image) {
+        const ogImage = String((openGraphData as any).image);
+        const ogLower = ogImage.toLowerCase();
+        const looksLikePlaceholder = ogLower.includes('logo') || ogLower.includes('icon') || ogLower.includes('placeholder') || ogLower.includes('default') || (ogLower.includes('google') && ogLower.includes('preferred'));
+        if (!looksLikePlaceholder) {
           images.push({ url: ogImage, alt: title, caption: "Open Graph image", source: "opengraph" });
         }
       }
@@ -470,7 +554,10 @@ export class ScrapingService {
       });
     }
 
-    return [...new Map(images.map((img) => [img.url, img])).values()].slice(0, 5);
+    // De-duplicate and further filter placeholders
+    const deduped = [...new Map(images.map((img) => [img.url, img])).values()]
+      .filter(img => !/placeholder|default|sprite|spacer|1x1/i.test(img.url) && !(img.url.toLowerCase().includes('google') && img.url.toLowerCase().includes('preferred')));
+    return deduped.slice(0, 5);
   }
   
   private isValidArticleImage(src: string, alt: string, width: number, height: number): boolean {
