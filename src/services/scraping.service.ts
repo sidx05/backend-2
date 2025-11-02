@@ -506,6 +506,72 @@ export class ScrapingService {
     }
   }
 
+  // Enrich already-scraped articles by fetching full HTML and updating content/images
+  async enrichArticles(params?: { limit?: number; minWords?: number; concurrency?: number }) {
+    const limit = params?.limit ?? 200;
+    const minWords = params?.minWords ?? 80;
+    const concurrency = params?.concurrency ?? 5;
+
+    const candidates = await Article.find({
+      status: { $in: ["scraped", "processed", null as any] },
+      $or: [
+        { wordCount: { $exists: false } },
+        { wordCount: { $lt: minWords } },
+        { content: { $exists: false } },
+        { content: "" },
+      ],
+    })
+      .sort({ scrapedAt: -1 })
+      .limit(limit);
+
+    let processed = 0;
+    let improved = 0;
+    let failed = 0;
+
+    for (let i = 0; i < candidates.length; i += concurrency) {
+      const batch = candidates.slice(i, i + concurrency);
+      const results = await Promise.allSettled(
+        batch.map(async (doc) => {
+          const url = (doc as any).canonicalUrl || (doc as any).sourceUrl || "";
+          if (!url) return false;
+          // Fetch full HTML
+          const html = await this.fetchArticleContent(url);
+          if (!html) return false;
+          const og = this.extractOpenGraphFromHtml(html);
+          // Extract content and images
+          const images = this.extractImages(html, url, og);
+          const content = this.cleanContent(html);
+          const wc = (content || "").split(/\s+/).filter(Boolean).length;
+
+          const update: any = {
+            content: content || (doc as any).content || "",
+            images: images?.length ? images : (doc as any).images || [],
+            thumbnail: images?.length ? images[0].url : (doc as any).thumbnail,
+            wordCount: wc,
+            readingTime: Math.max(1, Math.ceil(wc / 200)),
+            openGraph: { ...(doc as any).openGraph, ...og },
+            status: "processed",
+            updatedAt: new Date(),
+          };
+          const beforeWC = (doc as any).wordCount || 0;
+          await Article.updateOne({ _id: (doc as any)._id }, { $set: update });
+          return wc > beforeWC + 30; // consider improved if word count meaningfully higher
+        })
+      );
+
+      for (const r of results) {
+        processed++;
+        if (r.status === "fulfilled") {
+          if (r.value) improved++;
+        } else {
+          failed++;
+        }
+      }
+    }
+
+    logger.info(`✅ Enrichment finished. Processed: ${processed}, Improved: ${improved}, Failed: ${failed}`);
+    return { processed, improved, failed, limit, minWords };
+  }
   private async fetchArticleContent(url: string): Promise<string> {
     return this.retryRequest(async () => {
       const axiosInstance = this.createAxiosInstance();

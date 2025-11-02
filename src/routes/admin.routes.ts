@@ -33,10 +33,12 @@ router.patch('/categories/:id', adminController.updateCategory);
 
 // Ingest management
 router.post("/scrape", adminController.triggerScrape.bind(adminController));
+router.post("/enrich", adminController.triggerEnrichment.bind(adminController));
 
 // Debug
 router.get("/debug/db", adminController.dbInfo);
 router.get("/scrape/status", adminController.scrapeStatus);
+router.get("/enrich/status", adminController.enrichStatus);
 
 
 export default router;

@@ -39,6 +39,18 @@ export class AdminController {
     mode?: 'fast' | 'full';
   } = {};
 
+  // In-memory enrichment job status
+  private static lastEnrichStatus: {
+    startedAt?: string;
+    finishedAt?: string;
+    processed?: number;
+    improved?: number;
+    failed?: number;
+    limit?: number;
+    minWords?: number;
+    error?: string;
+  } = {};
+
   // Article management
   createArticle = async (req: Request, res: Response) => {
     try {
@@ -391,6 +403,11 @@ export class AdminController {
     res.json({ success: true, data: AdminController.lastScrapeStatus });
   };
 
+  // Enrichment status
+  enrichStatus = async (req: Request, res: Response) => {
+    res.json({ success: true, data: AdminController.lastEnrichStatus });
+  };
+
     // Ingest management
   // inside AdminController
 async triggerScrape(req: any, res: any) {
@@ -436,6 +453,44 @@ async triggerScrape(req: any, res: any) {
     } catch (err) {
       console.error("triggerScrape failed", err);
       return res.status(500).json({ success: false, error: "Scrape failed" });
+    }
+  }
+
+  // Trigger background enrichment of light articles
+  async triggerEnrichment(req: any, res: any) {
+    try {
+      const limit = Math.max(1, Math.min(1000, Number(req.query?.limit ?? 200)));
+      const minWords = Math.max(20, Math.min(2000, Number(req.query?.minWords ?? 80)));
+
+      logger.info(`Admin enrichment trigger received. limit=${limit} minWords=${minWords}`);
+      AdminController.lastEnrichStatus = {
+        startedAt: new Date().toISOString(),
+        limit,
+        minWords,
+      };
+
+      this.scrapingService
+        .enrichArticles({ limit, minWords })
+        .then((stats: any) => {
+          AdminController.lastEnrichStatus = {
+            ...AdminController.lastEnrichStatus,
+            finishedAt: new Date().toISOString(),
+            ...stats,
+          };
+        })
+        .catch((err: any) => {
+          logger.error('Background enrichment failed', err);
+          AdminController.lastEnrichStatus = {
+            ...AdminController.lastEnrichStatus,
+            finishedAt: new Date().toISOString(),
+            error: String(err?.message || err),
+          };
+        });
+
+      return res.status(202).json({ success: true, message: 'Enrichment started', limit, minWords });
+    } catch (err) {
+      console.error('triggerEnrichment failed', err);
+      return res.status(500).json({ success: false, error: 'Enrichment failed' });
     }
   }
 }
