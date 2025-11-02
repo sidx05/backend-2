@@ -395,7 +395,7 @@ export class AdminController {
   // inside AdminController
 async triggerScrape(req: any, res: any) {
     try {
-      const mode = (req.query?.mode === 'fast' ? 'fast' : 'full') as 'fast' | 'full';
+  const mode = (req.query?.mode === 'full' ? 'full' : 'fast') as 'fast' | 'full';
       // Determine how many sources are active up front
       let activeCount = 0;
       try {
