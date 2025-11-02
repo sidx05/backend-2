@@ -353,6 +353,15 @@ export class AdminController {
   // inside AdminController
 async triggerScrape(req: any, res: any) {
     try {
+      // Determine how many sources are active up front
+      let activeCount = 0;
+      try {
+        const active = await this.sourceService.getActiveSources();
+        activeCount = Array.isArray(active) ? active.length : 0;
+      } catch (e) {
+        activeCount = 0;
+      }
+
       // Fire-and-forget to avoid blocking the HTTP response; log outcome
       this.scrapingService
         .scrapeAllSources()
@@ -363,7 +372,7 @@ async triggerScrape(req: any, res: any) {
           logger.error('Background scrape failed', err);
         });
 
-      return res.status(202).json({ success: true, message: 'Scrape started' });
+      return res.status(202).json({ success: true, message: 'Scrape started', queuedSources: activeCount });
     } catch (err) {
       console.error("triggerScrape failed", err);
       return res.status(500).json({ success: false, error: "Scrape failed" });
