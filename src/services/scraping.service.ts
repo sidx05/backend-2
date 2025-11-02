@@ -31,13 +31,13 @@ const USER_AGENTS = [
 let currentProxyIndex = 0;
 let currentUserAgentIndex = 0;
 
-// Rate limiting
-const RATE_LIMIT_DELAY = 1000; // 1 second between requests (faster)
+// Rate limiting (tuned down to speed up overall throughput)
+const RATE_LIMIT_DELAY = 250; // 0.25s between HTTP requests
 let lastRequestTime = 0;
 
-// Timeout settings
-const REQUEST_TIMEOUT = 10000; // 10 seconds max per request
-const ARTICLE_SCRAPE_TIMEOUT = 15000; // 15 seconds max per article
+// Timeout settings (tighter to avoid long hangs)
+const REQUEST_TIMEOUT = 6000; // 6 seconds max per request
+const ARTICLE_SCRAPE_TIMEOUT = 8000; // 8 seconds max per article
 
 // Concurrency for sources scraping
 const SOURCE_BATCH_SIZE = 5;
@@ -52,7 +52,7 @@ export interface ScrapedArticle {
     caption?: string;
     width?: number;
     height?: number;
-    source: "scraped" | "opengraph" | "ai_generated" | "api" | "rss";
+    source: "scraped" | "opengraph" | "ai_generated" | "api";
   }[];
   category: string;
   categories?: string[]; // New field for multiple categories
@@ -175,7 +175,7 @@ export class ScrapingService {
     throw new Error('Max retries exceeded');
   }
 
-  async scrapeAllSources(): Promise<{ articles: ScrapedArticle[]; stats: any }> {
+  async scrapeAllSources(options?: { mode?: 'fast' | 'full' }): Promise<{ articles: ScrapedArticle[]; stats: any }> {
     try {
       logger.info("🔹 Starting scraping for all sources");
       const sources = await Source.find({ active: true });
@@ -192,7 +192,7 @@ export class ScrapingService {
         const results = await Promise.allSettled(batch.map(async (source) => {
           try {
             logger.info(`🔄 Scraping source ${successCount + failCount + 1}/${sources.length}: ${source.name}`);
-            const { articles, meta } = await this.scrapeSource(source);
+            const { articles, meta } = await this.scrapeSource(source, options);
             return { source, articles, meta };
           } catch (err) {
             throw { source, err };
@@ -317,7 +317,7 @@ export class ScrapingService {
     }
   }
 
-  async scrapeSource(source: any): Promise<{ articles: ScrapedArticle[]; meta: { rssUrls: number; rssFetched: number; rssFailed: number; itemsSeen: number } }> {
+  async scrapeSource(source: any, options?: { mode?: 'fast' | 'full' }): Promise<{ articles: ScrapedArticle[]; meta: { rssUrls: number; rssFetched: number; rssFailed: number; itemsSeen: number } }> {
     try {
       logger.info(`🔹 Scraping source: ${source.name}`);
       const articles: ScrapedArticle[] = [];
@@ -349,7 +349,7 @@ export class ScrapingService {
             
             for (const item of items) {
               const scraped = await Promise.race([
-                this.scrapeArticle(item, source),
+                this.scrapeArticle(item, source, options),
                 new Promise<null>((_, reject) => 
                   setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
                 )
@@ -380,7 +380,7 @@ export class ScrapingService {
 
           for (const item of resp.data.articles || []) {
             const scraped = await Promise.race([
-              this.scrapeArticle(item, source),
+              this.scrapeArticle(item, source, options),
               new Promise<null>((_, reject) => 
                 setTimeout(() => reject(new Error('Article scrape timeout')), ARTICLE_SCRAPE_TIMEOUT)
               )
@@ -403,7 +403,7 @@ export class ScrapingService {
     }
   }
 
-  async scrapeArticle(item: any, source: any): Promise<ScrapedArticle | null> {
+  async scrapeArticle(item: any, source: any, options?: { mode?: 'fast' | 'full' }): Promise<ScrapedArticle | null> {
     try {
       const title = item.title || "";
       const link = item.link || item.url || "";
@@ -425,14 +425,16 @@ export class ScrapingService {
       const existing = await Article.findOne({ hash });
       if (existing) return null;
 
-      const fullContent = source.type === "api" ? summary : await this.fetchArticleContent(link);
-      const openGraphData = await this.extractOpenGraphData(link);
+  const fastMode = options?.mode === 'fast';
+  // In fast mode, we don't fetch full HTML or OG upfront
+  const fullContent = fastMode || source.type === "api" ? "" : await this.fetchArticleContent(link);
+  const openGraphData = fastMode ? {} : (fullContent ? this.extractOpenGraphFromHtml(fullContent) : await this.extractOpenGraphData(link));
 
       // Priority: scraped article images > RSS enclosure/media images > API images > Open Graph images
       let images: ScrapedArticle["images"] = [];
 
       // 1) Extract from article HTML
-      if (fullContent) {
+      if (!fastMode && fullContent) {
         images = this.extractImages(fullContent, link, openGraphData);
       }
 
@@ -456,7 +458,7 @@ export class ScrapingService {
       }
 
       // 4) Last resort: Open Graph image (avoid obvious placeholders/logos)
-      if (images.length === 0 && openGraphData && 'image' in openGraphData && (openGraphData as any).image) {
+      if (!fastMode && images.length === 0 && openGraphData && 'image' in openGraphData && (openGraphData as any).image) {
         const ogImage = String((openGraphData as any).image);
         const ogLower = ogImage.toLowerCase();
         const looksLikePlaceholder = ogLower.includes('logo') || ogLower.includes('icon') || ogLower.includes('placeholder') || ogLower.includes('default') || (ogLower.includes('google') && ogLower.includes('preferred'));
@@ -472,7 +474,7 @@ export class ScrapingService {
       return {
         title,
         summary: summary.substring(0, 300),
-        content: this.cleanContent(fullContent),
+        content: fastMode ? summary.substring(0, 1000) : this.cleanContent(fullContent),
         images,
         category: category ?? "general",
         tags,
@@ -487,6 +489,20 @@ export class ScrapingService {
     } catch (err: unknown) {
       logger.error(`❌ scrapeArticle error: ${(err as Error).message}`);
       return null;
+    }
+  }
+
+  // If we already fetched HTML, pull OG tags from it instead of another request
+  private extractOpenGraphFromHtml(html: string) {
+    try {
+      const $ = cheerio.load(html);
+      return {
+        image: $('meta[property="og:image"]').attr("content") || $('meta[name="twitter:image"]').attr("content"),
+        title: $('meta[property="og:title"]').attr("content") || $('title').text(),
+        description: $('meta[property="og:description"]').attr("content") || $('meta[name="description"]').attr("content"),
+      };
+    } catch {
+      return {};
     }
   }
 

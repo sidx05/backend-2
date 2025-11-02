@@ -36,6 +36,7 @@ export class AdminController {
     activeSources?: number;
     articlesInserted?: number;
     error?: string;
+    mode?: 'fast' | 'full';
   } = {};
 
   // Article management
@@ -394,6 +395,7 @@ export class AdminController {
   // inside AdminController
 async triggerScrape(req: any, res: any) {
     try {
+      const mode = (req.query?.mode === 'fast' ? 'fast' : 'full') as 'fast' | 'full';
       // Determine how many sources are active up front
       let activeCount = 0;
       try {
@@ -403,14 +405,15 @@ async triggerScrape(req: any, res: any) {
         activeCount = 0;
       }
 
-      logger.info(`Admin scrape trigger received. Active sources: ${activeCount}`);
+      logger.info(`Admin scrape trigger received. Mode: ${mode}. Active sources: ${activeCount}`);
       AdminController.lastScrapeStatus = {
         startedAt: new Date().toISOString(),
         activeSources: activeCount,
+        mode,
       };
       // Fire-and-forget to avoid blocking the HTTP response; log outcome
       this.scrapingService
-        .scrapeAllSources()
+        .scrapeAllSources({ mode })
         .then((result: { articles: ScrapedArticle[]; stats: any }) => {
           logger.info(`Scrape completed. Scraped: ${result.articles.length}, Inserted (approx): ${result.stats?.total?.inserted ?? 'n/a'}`);
           AdminController.lastScrapeStatus = {
@@ -429,7 +432,7 @@ async triggerScrape(req: any, res: any) {
           };
         });
 
-      return res.status(202).json({ success: true, message: 'Scrape started', queuedSources: activeCount });
+      return res.status(202).json({ success: true, message: 'Scrape started', queuedSources: activeCount, mode });
     } catch (err) {
       console.error("triggerScrape failed", err);
       return res.status(500).json({ success: false, error: "Scrape failed" });
