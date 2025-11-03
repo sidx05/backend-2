@@ -753,6 +753,15 @@ export class ScrapingService {
   private cleanContent(html: string): string {
     if (!html) return "";
     
+    // Check for CDN error pages and other error responses
+    if (html.includes('Reference #') || 
+        html.includes('errors.edgesuite.net') || 
+        html.includes('Access Denied') ||
+        html.includes('403 Forbidden') ||
+        html.includes('CloudFront')) {
+      return "";
+    }
+    
     const $ = cheerio.load(html);
     
     // Remove script, style, noscript, iframe, and other non-content elements
