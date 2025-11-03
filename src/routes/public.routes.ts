@@ -20,6 +20,7 @@ router.get("/public/article/:id", publicController.getArticleById);
 
 // Also support the singular form that frontend expects
 router.get("/article/:id", publicController.getArticleById);
+router.post("/article/:id/view", publicController.incrementViewCount);
 
 // Categories
 router.get("/categories", publicController.getCategories);

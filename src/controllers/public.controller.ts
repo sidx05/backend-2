@@ -137,6 +137,39 @@ export class PublicController {
     }
   };
 
+  incrementViewCount = async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+
+      const article = await this.articleService.incrementViewCount(id);
+
+      res.json({
+        success: true,
+        data: {
+          viewCount: article.viewCount,
+        },
+      });
+    } catch (error) {
+      logger.error('Increment view count controller error:', error);
+
+      if (error instanceof Error) {
+        if (error.message === 'Article not found') {
+          return res.status(404).json({
+            success: false,
+            error: 'Not Found',
+            message: error.message,
+          });
+        }
+      }
+
+      res.status(500).json({
+        success: false,
+        error: 'Internal Server Error',
+        message: 'Failed to increment view count',
+      });
+    }
+  };
+
   getCategories = async (req: Request, res: Response) => {
     try {
       const categories = await this.categoryService.getCategories();

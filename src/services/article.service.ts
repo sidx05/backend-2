@@ -163,9 +163,6 @@ export class ArticleService {
         throw new Error('Article not found');
       }
 
-      // Increment view count
-      await Article.findByIdAndUpdate(article._id, { $inc: { viewCount: 1 } });
-
       // Cache for 1 hour
       if (redisClient) {
         await redisClient.setEx(cacheKey, 3600, JSON.stringify(article));
@@ -174,6 +171,44 @@ export class ArticleService {
       return article;
     } catch (error) {
       logger.error('Get article by ID error:', error);
+      throw error;
+    }
+  }
+
+  async incrementViewCount(id: string) {
+    try {
+      // Get article first - support both ObjectId and slug
+      let article;
+      if (/^[0-9a-fA-F]{24}$/.test(id)) {
+        article = await Article.findById(id);
+      } else {
+        article = await Article.findOne({ slug: id });
+      }
+
+      if (!article) {
+        throw new Error('Article not found');
+      }
+
+      // Increment view count
+      const updated = await Article.findByIdAndUpdate(
+        article._id,
+        { $inc: { viewCount: 1 } },
+        { new: true }
+      );
+
+      // Invalidate cache
+      const cacheKeys = [
+        `article:${article.slug}`,
+        `article:id:${id}`,
+        `article:id:${article._id}`
+      ];
+      if (redisClient) {
+        await Promise.all(cacheKeys.map(key => redisClient!.del(key)));
+      }
+
+      return updated!;
+    } catch (error) {
+      logger.error('Increment view count error:', error);
       throw error;
     }
   }
