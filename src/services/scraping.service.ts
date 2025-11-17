@@ -803,10 +803,145 @@ export class ScrapingService {
     }
     
     // Clean up whitespace
-    return content
+    content = content
       .replace(/\s+/g, ' ')
       .replace(/\n+/g, '\n')
-      .trim()
-      .substring(0, 5000); // Limit content length
+      .trim();
+    
+    // Remove unwanted patterns and boilerplate text
+    content = this.removeUnwantedPatterns(content);
+    
+    // Format paragraphs properly
+    content = this.formatParagraphs(content);
+    
+    return content.substring(0, 5000); // Limit content length
+  }
+
+  /**
+   * Remove common unwanted patterns from article content
+   */
+  private removeUnwantedPatterns(text: string): string {
+    if (!text) return "";
+
+    // Patterns to remove (cookie notices, social media snippets, etc.)
+    const unwantedPatterns = [
+      // Cookie notices (English)
+      /We use cookies to.*?cookies\./gi,
+      /This (?:site|website) uses cookies.*?(?:accept|continue|agree)\./gi,
+      /By (?:clicking|using|continuing).*?(?:cookies|privacy policy)\./gi,
+      /Cookie (?:policy|notice|consent).*?(?:\.|\n)/gi,
+      
+      // Cookie notices (Multi-language - covers Telugu, Hindi, Tamil, etc.)
+      /కుకీ.*?(?:ఉపయోగిస్తాము|అంగీకరిస్తున్నారు).*?[\.\।]/gi,
+      /कुकी.*?(?:उपयोग|सहमत).*?[\.\।]/gi,
+      /குக்கீ.*?(?:பயன்படுத்து|ஒப்புக்கொள்).*?[\.\।]/gi,
+      
+      // Twitter/X links and handles
+      /pic\.twitter\.com\/[a-zA-Z0-9]+/gi,
+      /x\.com\/[a-zA-Z0-9_]+/gi,
+      /twitter\.com\/[a-zA-Z0-9_]+/gi,
+      /@[a-zA-Z0-9_]+\s*pic\.twitter/gi,
+      
+      // Social media links
+      /(?:Follow|Like|Share).*?(?:Facebook|Twitter|Instagram|LinkedIn).*?[\.\n]/gi,
+      /(?:Share|Tweet|Post).*?social media.*?[\.\n]/gi,
+      
+      // Newsletter/Subscription prompts
+      /Subscribe.*?newsletter.*?[\.\n]/gi,
+      /Sign up.*?(?:updates|newsletter).*?[\.\n]/gi,
+      /Join.*?mailing list.*?[\.\n]/gi,
+      
+      // Advertisement markers
+      /\[?Advertisement\]?/gi,
+      /\[?Sponsored\]?/gi,
+      /This is a sponsored post/gi,
+      
+      // Read more/Continue reading prompts
+      /Click here to read more\.?/gi,
+      /Continue reading.*?[\.\n]/gi,
+      /Read the full (?:story|article).*?[\.\n]/gi,
+      
+      // Related/Trending article snippets
+      /Also read:.*?[\.\n]/gi,
+      /Related:.*?[\.\n]/gi,
+      /Trending:.*?[\.\n]/gi,
+      
+      // Source attribution when it appears mid-article
+      /\((?:PTI|ANI|Reuters|AP|AFP)\)\s*/gi,
+      
+      // Incomplete sentences with ellipsis followed by links
+      /…\s*(?:pic|http|www)\.[a-zA-Z0-9\/.]+/gi,
+      
+      // Photo credit lines
+      /Photo (?:Credit|by):.*?[\.\n]/gi,
+      /Image (?:Credit|by|source):.*?[\.\n]/gi,
+      /(?:Picture|Image).*?(?:Getty|Reuters|AFP|AP).*?[\.\n]/gi,
+      
+      // Copyright notices
+      /©.*?All rights reserved.*?[\.\n]/gi,
+      /Copyright.*?[\.\n]/gi,
+      
+      // App download prompts
+      /Download.*?(?:app|application).*?(?:Play Store|App Store).*?[\.\n]/gi,
+      
+      // Excessive whitespace and special characters
+      /\s{3,}/g,
+      /\.{4,}/g,
+      /_{3,}/g,
+      /-{3,}/g,
+    ];
+
+    let cleaned = text;
+    
+    // Apply all unwanted pattern removals
+    for (const pattern of unwantedPatterns) {
+      cleaned = cleaned.replace(pattern, ' ');
+    }
+
+    // Remove sentences that are incomplete (end with … or ellipsis near links)
+    cleaned = cleaned.replace(/[^\.!?]+…\s*$/gm, '');
+    
+    // Clean up multiple spaces created by removals
+    cleaned = cleaned.replace(/\s{2,}/g, ' ').trim();
+
+    return cleaned;
+  }
+
+  /**
+   * Format content into proper paragraphs
+   */
+  private formatParagraphs(text: string): string {
+    if (!text) return "";
+
+    // Split by sentence-ending punctuation followed by capital letter
+    // This helps identify paragraph breaks
+    let formatted = text;
+
+    // Add line breaks after sentences that end with period, question mark, or exclamation
+    // followed by a capital letter (likely new paragraph)
+    formatted = formatted.replace(/([\.!?])\s+([A-Z])/g, '$1\n\n$2');
+
+    // Remove lines that are too short (likely fragments)
+    const lines = formatted.split('\n');
+    const meaningfulLines = lines.filter(line => {
+      const trimmed = line.trim();
+      // Keep lines that are either:
+      // 1. Longer than 30 characters, OR
+      // 2. End with proper punctuation and are at least 15 chars
+      return trimmed.length > 30 || 
+             (trimmed.length >= 15 && /[\.!?]$/.test(trimmed));
+    });
+
+    // Join paragraphs with double line breaks
+    formatted = meaningfulLines.join('\n\n');
+
+    // Clean up excessive line breaks
+    formatted = formatted.replace(/\n{3,}/g, '\n\n');
+
+    // Remove trailing/leading whitespace from each paragraph
+    formatted = formatted.split('\n').map(p => p.trim()).join('\n');
+
+    return formatted.trim();
   }
 }
+
