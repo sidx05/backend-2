@@ -40,12 +40,11 @@ export class JobProcessor {
 
       for (const source of sources) {
         try {
-          const scrapeResult = await this.scrapingService.scrapeSource(source);
-          const scrapedArticles = scrapeResult.articles;
-          totalArticles += scrapedArticles.length;
+          const scrapedResult = await this.scrapingService.scrapeSource(source);
+          totalArticles += scrapedResult.articles.length;
 
           // Process each scraped article
-          for (const scrapedArticle of scrapedArticles) {
+          for (const scrapedArticle of scrapedResult.articles) {
             try {
               await this.processScrapedArticle(scrapedArticle, source);
               successfulArticles++;
