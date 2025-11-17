@@ -732,6 +732,58 @@ async function seed() {
         lang: "mr",
         categories: [catByKey("health")],
         active: true,
+      },
+
+      // 📹 Video News
+      {
+        name: "ABP Live Video News",
+        url: "https://www.abplive.com/short-video",
+        rssUrls: ["https://www.abplive.com/short-video/feed"],
+        lang: "en",
+        categories: [catByKey("news")],
+        active: true,
+        metadata: {
+          contentType: "video",
+          isVideoNews: true
+        }
+      },
+      {
+        name: "LiveMint Video News",
+        url: "https://www.livemint.com/videos",
+        rssUrls: ["https://www.livemint.com/rss/videos"],
+        lang: "en",
+        categories: [catByKey("news")],
+        active: true,
+        metadata: {
+          contentType: "video",
+          isVideoNews: true
+        }
+      },
+
+      // 📸 Photo Gallery
+      {
+        name: "Photofocus Blog Gallery",
+        url: "https://photofocusblog.com",
+        rssUrls: ["https://feeds.feedburner.com/PhotofocusBlog"],
+        lang: "en",
+        categories: [catByKey("lifestyle")],
+        active: true,
+        metadata: {
+          contentType: "photo-gallery",
+          isPhotoGallery: true
+        }
+      },
+      {
+        name: "ABP Live Photo Gallery",
+        url: "https://www.abplive.com/photo-gallery",
+        rssUrls: ["https://www.abplive.com/photo-gallery/feed"],
+        lang: "en",
+        categories: [catByKey("news")],
+        active: true,
+        metadata: {
+          contentType: "photo-gallery",
+          isPhotoGallery: true
+        }
       }
     ];
 
