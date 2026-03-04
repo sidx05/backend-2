@@ -1,6 +1,6 @@
 // Utility script to update the Latest News source to Scroll.in
-require('dotenv').config();
-const mongoose = require('mongoose');
+import 'dotenv/config';
+import mongoose from 'mongoose';
 
 async function run() {
   try {

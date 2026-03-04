@@ -1,4 +1,4 @@
-import { Article, Category } from '../models';
+import { Article, Category, Source } from '../models';
 import { GetArticlesQuery, GetTrendingQuery } from '../utils/validation';
 import { redisClient } from '../index';
 import { logger } from '../utils/logger';
@@ -9,6 +9,7 @@ export class ArticleService {
       const {
         category,
         lang,
+        type,
         search,
         sort = 'latest',
         page = '1',
@@ -41,6 +42,36 @@ export class ArticleService {
 
       if (lang) {
         filter.language = lang;
+      }
+
+      // Filter by media/content type via source metadata
+      if (type) {
+        const t = String(type).toLowerCase();
+        const match: any[] = [];
+        if (t === 'video') {
+          match.push({ 'metadata.contentType': 'video' });
+          match.push({ 'metadata.isVideoNews': true });
+        } else if (t === 'photo-gallery' || t === 'photo' || t === 'gallery') {
+          match.push({ 'metadata.contentType': 'photo-gallery' });
+          match.push({ 'metadata.isPhotoGallery': true });
+        } else if (t === 'podcast' || t === 'podcasts') {
+          match.push({ 'metadata.contentType': 'podcast' });
+          match.push({ 'metadata.isPodcast': true });
+        } else if (t === 'opinion' || t === 'editorial') {
+          match.push({ 'metadata.contentType': 'opinion' });
+          match.push({ 'metadata.isOpinion': true });
+        }
+
+        if (match.length) {
+          const sources = await Source.find({ $or: match }).select('_id');
+          const sourceIds = sources.map(s => s._id);
+          if (sourceIds.length) {
+            filter['source.sourceId'] = { $in: sourceIds };
+          } else {
+            // No matching sources; ensure empty result efficiently
+            filter['source.sourceId'] = { $in: [] };
+          }
+        }
       }
 
       if (search) {

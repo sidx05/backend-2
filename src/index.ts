@@ -109,7 +109,7 @@ async function startServer() {
 
     // schedule jobs (RSS worker etc.) only when Redis is available
     console.log("=== STARTSERVER: Checking job scheduler ===");
-    if (REDIS_URL && redisClient) {
+    if (REDIS_URL && redisClient && process.env.NODE_ENV === 'production') {
       console.log("=== STARTSERVER: Creating BullMQ ===");
       const bullmq = createBullMQ();
       console.log("=== STARTSERVER: Scheduling scraping job ===");
@@ -118,8 +118,8 @@ async function startServer() {
       });
       console.log("=== STARTSERVER: Jobs scheduled ===");
     } else {
-      logger.warn("Jobs scheduler skipped (no Redis connection).");
-      console.log("=== STARTSERVER: Jobs skipped (no Redis) ===");
+      logger.warn("Jobs scheduler skipped (development mode or no Redis connection).");
+      console.log("=== STARTSERVER: Jobs skipped (dev mode) ===");
     }
 
     // health

@@ -68,6 +68,8 @@ export const updateTickerSchema = createTickerSchema.partial();
 export const getArticlesSchema = z.object({
   category: z.string().optional(),
   lang: z.string().optional(),
+  // media/content type filter e.g., "video", "photo-gallery"
+  type: z.string().optional(),
   search: z.string().optional(),
   sort: z.enum(['latest', 'popular', 'trending']).optional().default('latest'),
   page: z.string().regex(/^\d+$/, 'Page must be a number').optional().default('1'),

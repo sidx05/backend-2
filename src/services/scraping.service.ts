@@ -476,6 +476,14 @@ export class ScrapingService {
 
       const tags = this.extractTags(title, summary, fullContent);
 
+      // Detect language from actual content instead of just trusting source
+      const detectedLang = this.detectLanguage(`${title} ${summary} ${fullContent}`);
+      
+      // Log warning if detected language doesn't match source language
+      if (detectedLang !== source.lang) {
+        logger.warn(`⚠️  Language mismatch: Source "${source.name}" is marked as "${source.lang}" but article detected as "${detectedLang}": ${title.substring(0, 50)}...`);
+      }
+
       return {
         title,
         summary: summary.substring(0, 300),
@@ -484,7 +492,7 @@ export class ScrapingService {
         category: category ?? "general",
         tags,
         author: item.author || this.extractAuthor(fullContent) || source.name,
-        lang: source.lang || "en",
+        lang: detectedLang, // Use detected language instead of source.lang
         sourceUrl: link,
         publishedAt,
         hash,
@@ -750,6 +758,87 @@ export class ScrapingService {
     return match ? match[1] : null;
   }
 
+  /**
+   * Detect the language of text content based on Unicode ranges
+   * Returns ISO language code (en, hi, te, ta, bn, gu, mr)
+   */
+  private detectLanguage(text: string): string {
+    if (!text || text.length < 10) return 'en'; // Default to English for very short text
+    
+    // Remove URLs, numbers, punctuation for better detection
+    const cleanText = text.replace(/https?:\/\/[^\s]+/g, '')
+                          .replace(/[0-9]+/g, '')
+                          .replace(/[.,!?;:()\[\]{}'"]/g, '')
+                          .trim();
+    
+    if (cleanText.length < 10) return 'en';
+    
+    // Count characters in different Unicode ranges
+    let devanagariCount = 0; // Hindi/Marathi
+    let teluguCount = 0;
+    let tamilCount = 0;
+    let bengaliCount = 0;
+    let gujaratiCount = 0;
+    let latinCount = 0;
+    
+    for (const char of cleanText) {
+      const code = char.charCodeAt(0);
+      
+      // Devanagari (Hindi/Marathi): U+0900 to U+097F
+      if (code >= 0x0900 && code <= 0x097F) {
+        devanagariCount++;
+      }
+      // Telugu: U+0C00 to U+0C7F
+      else if (code >= 0x0C00 && code <= 0x0C7F) {
+        teluguCount++;
+      }
+      // Tamil: U+0B80 to U+0BFF
+      else if (code >= 0x0B80 && code <= 0x0BFF) {
+        tamilCount++;
+      }
+      // Bengali: U+0980 to U+09FF
+      else if (code >= 0x0980 && code <= 0x09FF) {
+        bengaliCount++;
+      }
+      // Gujarati: U+0A80 to U+0AFF
+      else if (code >= 0x0A80 && code <= 0x0AFF) {
+        gujaratiCount++;
+      }
+      // Latin alphabet (English): A-Z, a-z
+      else if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
+        latinCount++;
+      }
+    }
+    
+    // Calculate percentages
+    const totalChars = cleanText.replace(/\s/g, '').length;
+    if (totalChars === 0) return 'en';
+    
+    const devanagariPercent = (devanagariCount / totalChars) * 100;
+    const teluguPercent = (teluguCount / totalChars) * 100;
+    const tamilPercent = (tamilCount / totalChars) * 100;
+    const bengaliPercent = (bengaliCount / totalChars) * 100;
+    const gujaratiPercent = (gujaratiCount / totalChars) * 100;
+    const latinPercent = (latinCount / totalChars) * 100;
+    
+    // Determine language based on highest percentage (threshold: 30%)
+    const threshold = 30;
+    
+    if (devanagariPercent > threshold) {
+      // Could be Hindi or Marathi - default to Hindi
+      // You can add more sophisticated detection if needed
+      return 'hi';
+    }
+    if (teluguPercent > threshold) return 'te';
+    if (tamilPercent > threshold) return 'ta';
+    if (bengaliPercent > threshold) return 'bn';
+    if (gujaratiPercent > threshold) return 'gu';
+    if (latinPercent > threshold) return 'en';
+    
+    // If no clear language detected, default to English
+    return 'en';
+  }
+
   private cleanContent(html: string): string {
     if (!html) return "";
     
@@ -825,11 +914,16 @@ export class ScrapingService {
 
     // Patterns to remove (cookie notices, social media snippets, etc.)
     const unwantedPatterns = [
-      // Cookie notices (English)
-      /We use cookies to.*?cookies\./gi,
-      /This (?:site|website) uses cookies.*?(?:accept|continue|agree)\./gi,
-      /By (?:clicking|using|continuing).*?(?:cookies|privacy policy)\./gi,
+      // Cookie notices (English) - More comprehensive
+      /We use cookies to.*?cookies\.?/gi,
+      /We use cookies.*?(?:By clicking|you agree).*?\.?/gi,
+      /This (?:site|website) uses cookies.*?(?:accept|continue|agree)\.?/gi,
+      /By (?:clicking|using|continuing).*?(?:cookies|privacy policy|use of cookies)\.?/gi,
       /Cookie (?:policy|notice|consent).*?(?:\.|\n)/gi,
+      /(?:improve|enhance) your experience.*?cookies\.?/gi,
+      /analyze traffic.*?personalize content.*?cookies\.?/gi,
+      /By clicking "Allow All Cookies".*?cookies\.?/gi,
+      /you agree to our use of cookies\.?/gi,
       
       // Cookie notices (Multi-language - covers Telugu, Hindi, Tamil, etc.)
       /కుకీ.*?(?:ఉపయోగిస్తాము|అంగీకరిస్తున్నారు).*?[\.\।]/gi,
